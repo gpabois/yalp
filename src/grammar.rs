@@ -1,4 +1,4 @@
-use super::{RuleDef, Symbol, Rule};
+use super::{Rule, RuleDef, Symbol};
 
 #[derive(Debug, Clone)]
 pub enum GrammarError<'s> {
@@ -10,26 +10,41 @@ impl std::fmt::Display for GrammarError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GrammarError::UnknownSymbol(sym) => write!(f, "Unknown symbol: {}", sym),
-            GrammarError::SymbolWithSameId(sym) => write!(f, "A symbol with the same identifier ({}) is already defined", sym),
+            GrammarError::SymbolWithSameId(sym) => write!(
+                f,
+                "A symbol with the same identifier ({}) is already defined",
+                sym
+            ),
         }
     }
 }
 
 pub type GrammarResult<'s, T> = Result<T, GrammarError<'s>>;
 
-#[derive(Default)]
 pub struct Grammar<'sid> {
     pub rules: Vec<RuleDef<'sid>>,
-    pub symbols: Vec<Symbol<'sid>>
+    pub symbols: Vec<Symbol<'sid>>,
+}
+
+impl Default for Grammar<'_> {
+    fn default() -> Self {
+        Self {
+            rules: Default::default(),
+            // $ is end of stream.
+            symbols: vec![Symbol::eos()],
+        }
+    }
 }
 
 impl<'sid> Grammar<'sid> {
+    pub fn eos(&self) -> &Symbol<'sid> {
+        self.symbols.iter().find(|s| s.eos).unwrap()
+    }
     /// Add a non-terminal symbol in the grammar.
     pub fn add_non_terminal_symbol(&mut self, id: &'sid str) -> GrammarResult<'sid, &mut Self> {
         if self.get_symbol(id).is_some() {
             Err(GrammarError::SymbolWithSameId(id))
-        }
-        else {
+        } else {
             self.symbols.push(Symbol::new(id, false));
             Ok(self)
         }
@@ -39,11 +54,10 @@ impl<'sid> Grammar<'sid> {
     pub fn add_terminal_symbol(&mut self, id: &'sid str) -> GrammarResult<'sid, &mut Self> {
         if self.get_symbol(id).is_some() {
             Err(GrammarError::SymbolWithSameId(id))
-        }
-        else {
+        } else {
             self.symbols.push(Symbol::new(id, true));
             Ok(self)
-        }     
+        }
     }
 
     /// Get a symbol based on its id.
@@ -52,21 +66,26 @@ impl<'sid> Grammar<'sid> {
     }
 
     /// Add a new rule
-    pub fn add_rule<I>(&mut self, lhs: &'sid str, rhs: I) -> GrammarResult<'sid, &mut Self> where I: IntoIterator<Item=&'sid str> {
+    pub fn add_rule<I>(&mut self, lhs: &'sid str, rhs: I) -> GrammarResult<'sid, &mut Self>
+    where
+        I: IntoIterator<Item = &'sid str>,
+    {
         let rule = RuleDef::new(
-            self.rules.len(), 
+            self.rules.len(),
             self.get_symbol(lhs)
-                .and_then(|sym| Some(sym.id))
+                .map(|sym| sym.id)
                 .ok_or(GrammarError::UnknownSymbol(lhs))?,
             rhs.into_iter()
-                .map(|id| self
-                        .get_symbol(id)
-                        .and_then(|sym| Some(sym.id))
+                .map(|id| {
+                    self.get_symbol(id)
+                        .map(|sym| sym.id)
                         .ok_or(GrammarError::UnknownSymbol(id))
-                )
-                .collect::<GrammarResult<'sid, Vec<_>>>()?
+                })
+                .collect::<GrammarResult<'sid, Vec<_>>>()?,
         );
+
         self.rules.push(rule);
+
         Ok(self)
     }
 
@@ -75,12 +94,22 @@ impl<'sid> Grammar<'sid> {
         Rule {
             id: def.id,
             lhs: self.get_symbol(def.lhs).unwrap(),
-            rhs: def.rhs.clone().into_iter().map(|s| self.get_symbol(s)).collect::<Option<Vec<_>>>().unwrap()
+            rhs: def
+                .rhs
+                .clone()
+                .into_iter()
+                .map(|s| self.get_symbol(s))
+                .collect::<Option<Vec<_>>>()
+                .unwrap(),
         }
     }
 
     /// Iterate over all rules of the grammar
-    pub fn iter_rules<'sym>(&'sym self) -> impl Iterator<Item=Rule<'sid, 'sym>> {
+    pub fn iter_rules<'sym>(&'sym self) -> impl Iterator<Item = Rule<'sid, 'sym>> {
         self.rules.iter().map(|r| self.borrow_rule(r))
+    }
+
+    pub fn iter_terminal_symbols(&self) -> impl Iterator<Item = &Symbol<'sid>> {
+        self.symbols.iter().filter(|sym| sym.terminal)
     }
 }

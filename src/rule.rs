@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use crate::Grammar;
 
 use super::Symbol;
@@ -5,83 +7,49 @@ use super::Symbol;
 pub type RuleId = usize;
 
 /// Defines a grammar rule
-/// 
+///
 /// X := A1..An
 #[derive(Debug, PartialEq)]
 pub struct RuleDef<'sid> {
     /// Identifier of the rule
     pub id: RuleId,
     pub lhs: &'sid str,
-    pub rhs: Vec<&'sid str>
+    pub rhs: Vec<&'sid str>,
 }
 
 impl<'sid> RuleDef<'sid> {
-    pub fn new<I>(id: RuleId, lhs: &'sid str, rhs: I) -> Self where I: IntoIterator<Item=&'sid str> {
+    pub fn new<I>(id: RuleId, lhs: &'sid str, rhs: I) -> Self
+    where
+        I: IntoIterator<Item = &'sid str>,
+    {
         Self {
-            id, lhs, rhs: rhs.into_iter().collect()
+            id,
+            lhs,
+            rhs: rhs.into_iter().collect(),
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 /// A grammar rule
-/// 
+///
 /// # Example
 /// A -> w eof
 pub struct Rule<'sid, 'sym> {
     pub id: RuleId,
     pub lhs: &'sym Symbol<'sid>,
-    pub rhs: Vec<&'sym Symbol<'sid>>
+    pub rhs: Vec<&'sym Symbol<'sid>>,
 }
 
-impl<'sid, 'sym> Rule<'sid, 'sym> {
-    pub fn at<'rule>(&'rule self, position: usize) -> Option<RuleItem<'sid, 'sym, 'rule>> {
-        RuleItem::new(self, position)
-    }
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-/// A rule item.
-/// 
-/// # Example 
-/// A -> w • eof
-pub struct RuleItem<'sid, 'sym, 'rule> {
-    pub rule: &'rule Rule<'sid, 'sym>,
-    pub position: usize
-}
-
-impl<'sid, 'sym, 'rule> RuleItem<'sid, 'sym, 'rule> {
-    fn new(rule: &'rule Rule<'sid, 'sym>, position: usize) -> Option<Self> {
-        if rule.rhs.len() >= position {
-            return Some(Self{rule, position})
-        } else {
-            None
-        }
-    }
-
-    /// Check if we reached the end of a rule.
-    /// 
-    /// # Example
-    /// A -> w • eof
-    pub fn is_terminating(&self) -> bool {
-        return self.position >= self.rule.rhs.len()
-    }
-    
-    /// Returns the current symbol.
-    /// If A -> w • eof, then returns None.
-    pub fn symbol(&self) -> Option<&'sym Symbol<'sid>> {
-        self.rule.rhs.get(self.position).copied()
-    }
-
-    /// Returns the next rule's item.
-    /// 
-    /// # Example
-    /// (A -> • w  eof).next() -> (A -> w • eof)
-    pub fn next(&self) -> Option<Self> {
-        Self::new(self.rule, self.position + 1)
+impl Hash for Rule<'_, '_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.lhs.hash(state);
+        self.rhs.hash(state);
     }
 }
 
+/// A set of rules.
+#[derive(Debug, Default)]
 pub struct RuleSet<'sid, 'sym>(Vec<Rule<'sid, 'sym>>);
 
 impl<'sid, 'sym> RuleSet<'sid, 'sym> {
@@ -90,91 +58,25 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
     }
 
     /// Iterate over all rules of the grammar
-    pub fn iter_rules(&self) -> impl Iterator<Item=&Rule<'sid, 'sym>> {
+    pub fn iter_rules(&self) -> impl Iterator<Item = &Rule<'sid, 'sym>> {
         self.0.iter()
     }
 
-    pub fn iter_symbol_related_rules(&self, sym: &'sym Symbol<'sid>) -> impl Iterator<Item=&Rule<'sid, 'sym>> {
-        self
-            .iter_rules()
-            .filter(|rule| *rule.lhs == *sym)
-    }
-}
-
-#[derive(Debug, Default, PartialEq)]
-pub struct RuleItemSet<'sid, 'sym, 'rule> {
-    items: Vec<RuleItem<'sid, 'sym, 'rule>>
-}
-
-impl<'sid, 'sym, 'rule> FromIterator<RuleItem<'sid, 'sym, 'rule>> for RuleItemSet<'sid, 'sym, 'rule> {
-    fn from_iter<T: IntoIterator<Item = RuleItem<'sid, 'sym, 'rule>>>(iter: T) -> Self {
-        let mut set = Self::default();
-        set.append(iter.into_iter());
-        set
-    }
-}
-
-impl<'sid, 'sym, 'rule> RuleItemSet<'sid, 'sym, 'rule> 
-{
-    /// Returns true if one of the item is terminating.
-    pub fn has_terminating_item(&self) -> bool {
-        self.iter()
-            .find(|item| item.is_terminating())
-            .is_some()
+    pub fn iter_symbol_related_rules(
+        &self,
+        sym: &'sym Symbol<'sid>,
+    ) -> impl Iterator<Item = &Rule<'sid, 'sym>> {
+        self.iter_rules().filter(|rule| *rule.lhs == *sym)
     }
 
-    pub fn next(&self) -> Self {
-        self.iter().flat_map(RuleItem::next).collect()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item=&RuleItem<'sid, 'sym, 'rule>> {
-        return self.items.iter()
-    }
-
-    pub fn push(&mut self, item: RuleItem<'sid, 'sym, 'rule>) {
-        if !self.contains(&item) {
-            self.items.push(item)
-        }
-    }
-
-    pub fn contains(&self, item: &RuleItem<'sid, 'sym, 'rule>) -> bool {
-        self.items.contains(item)
-    }
-
-    pub fn pop(&mut self) -> Option<RuleItem<'sid, 'sym, 'rule>> {
-        self.items.pop()
-    }
-
-    pub fn append<I>(&mut self, items: I) where I: Iterator<Item=RuleItem<'sid, 'sym, 'rule>>
-    {
-        for item in items {
-            self.push(item)
-        }
-    }
-
-    /// Close the item set
-    /// 
-    /// It will fetch all rules until the next symbol is a terminal one, or we reach the end of a rule.
-    pub fn close(&mut self, rules: &'rule RuleSet<'sid, 'sym>) {
-        let mut stack = self.items.clone();
-
-        while let Some(item) = stack.pop() {
-            if item.symbol().map(|sym| !sym.terminal).unwrap_or(false) {
-                let sym = item.symbol().unwrap();
-                for item in rules.iter_symbol_related_rules(sym).flat_map(|rule| rule.at(0)) {
-                    if !self.contains(&item) {
-                        stack.push(item);
-                        self.push(item);
-                    }
-                }
-            }
-        }
+    pub fn get(&self, id: RuleId) -> &Rule<'sid, 'sym> {
+        self.iter_rules().find(|rule| rule.id == id).unwrap()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Grammar, GrammarResult, RuleItem, RuleSet};
+    use crate::{Grammar, GrammarResult, RuleSet};
 
     fn fixture_grammar() -> GrammarResult<'static, Grammar<'static>> {
         let mut grammar = Grammar::default();
@@ -185,9 +87,11 @@ mod tests {
             .add_terminal_symbol("+")?
             .add_terminal_symbol("*")?
             .add_non_terminal_symbol("E")?
-            .add_non_terminal_symbol("B")?;
-    
+            .add_non_terminal_symbol("B")?
+            .add_non_terminal_symbol("S")?;
+
         grammar
+            .add_rule("S", ["E", "<eos>"])?
             .add_rule("E", ["E", "*", "B"])?
             .add_rule("E", ["E", "+", "B"])?
             .add_rule("E", ["B"])?
@@ -198,9 +102,32 @@ mod tests {
     }
 
     #[test]
-    fn test_001_closure() {
+    fn test_001_item_set_closure() {
         let grammar = fixture_grammar().expect("Cannot generate grammar");
         let rules = RuleSet::new(&grammar);
 
+        let mut set = RuleItemSet::from(&rules);
+        set.close(&rules);
+
+        let expected_set = RuleItemSet::new(
+            [
+                // S → • E eof
+                rules.get(0).at(0).unwrap(),
+            ],
+            [
+                // E → • E * B
+                rules.get(1).at(0).unwrap(),
+                // E → • E + B
+                rules.get(2).at(0).unwrap(),
+                // E → • B
+                rules.get(3).at(0).unwrap(),
+                // B → • 0
+                rules.get(4).at(0).unwrap(),
+                // B → • 1
+                rules.get(5).at(0).unwrap(),
+            ],
+        );
+
+        assert_eq!(set, expected_set)
     }
 }

@@ -1,7 +1,8 @@
-pub mod symbol;
-pub mod rule;
 pub mod grammar;
+pub mod lr;
+pub mod rule;
+pub mod symbol;
 
-pub use symbol::*;
-pub use rule::*;
 pub use grammar::*;
+pub use rule::*;
+pub use symbol::*;
