@@ -45,7 +45,7 @@ impl<'sid, 'sym, 'rule> Item<'sid, 'sym, 'rule> {
     }
 
     pub fn is_reaching_eos(&self) -> bool {
-        self.symbol().unwrap().eos
+        self.symbol().map(|sym| sym.eos).unwrap_or(false)
     }
 
     /// Returns the current symbol.
@@ -189,5 +189,43 @@ impl<'sid, 'sym, 'rule> ItemSet<'sid, 'sym, 'rule> {
                 }
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::{lr::item::ItemSet, RuleSet};
+
+    use crate::lr::fixtures::fixture_grammar;
+
+    #[test]
+    fn test_001_item_set_closure() {
+        let grammar = fixture_grammar().expect("Cannot generate grammar");
+        let rules = RuleSet::new(&grammar);
+
+        let mut set = ItemSet::from(&rules);
+        set.close(&rules);
+
+        let expected_set = ItemSet::new(
+            [
+                // S → • E eof
+                rules.get(0).at(0).unwrap(),
+            ],
+            [
+                // E → • E * B
+                rules.get(1).at(0).unwrap(),
+                // E → • E + B
+                rules.get(2).at(0).unwrap(),
+                // E → • B
+                rules.get(3).at(0).unwrap(),
+                // B → • 0
+                rules.get(4).at(0).unwrap(),
+                // B → • 1
+                rules.get(5).at(0).unwrap(),
+            ],
+        );
+
+        assert_eq!(set, expected_set)
     }
 }

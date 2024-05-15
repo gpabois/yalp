@@ -21,6 +21,7 @@ impl std::fmt::Display for GrammarError<'_> {
 
 pub type GrammarResult<'s, T> = Result<T, GrammarError<'s>>;
 
+#[derive(PartialEq)]
 pub struct Grammar<'sid> {
     pub rules: Vec<RuleDef<'sid>>,
     pub symbols: Vec<Symbol<'sid>>,
@@ -31,7 +32,7 @@ impl Default for Grammar<'_> {
         Self {
             rules: Default::default(),
             // $ is end of stream.
-            symbols: vec![Symbol::eos()],
+            symbols: vec![Symbol::root(), Symbol::eos()],
         }
     }
 }
@@ -42,7 +43,7 @@ impl<'sid> Grammar<'sid> {
     }
     /// Add a non-terminal symbol in the grammar.
     pub fn add_non_terminal_symbol(&mut self, id: &'sid str) -> GrammarResult<'sid, &mut Self> {
-        if self.get_symbol(id).is_some() {
+        if self.try_get_symbol(id).is_some() {
             Err(GrammarError::SymbolWithSameId(id))
         } else {
             self.symbols.push(Symbol::new(id, false));
@@ -52,7 +53,7 @@ impl<'sid> Grammar<'sid> {
 
     /// Add a terminal symbol in the grammar.
     pub fn add_terminal_symbol(&mut self, id: &'sid str) -> GrammarResult<'sid, &mut Self> {
-        if self.get_symbol(id).is_some() {
+        if self.try_get_symbol(id).is_some() {
             Err(GrammarError::SymbolWithSameId(id))
         } else {
             self.symbols.push(Symbol::new(id, true));
@@ -61,8 +62,16 @@ impl<'sid> Grammar<'sid> {
     }
 
     /// Get a symbol based on its id.
-    pub fn get_symbol(&self, id: &str) -> Option<&Symbol<'sid>> {
+    pub fn try_get_symbol(&self, id: &str) -> Option<&Symbol<'sid>> {
         self.symbols.iter().find(|s| s.id == id)
+    }
+
+    /// Returns the symbol behind the ID
+    /// 
+    /// # Panics
+    /// Panics if not symbol match the ID.
+    pub fn sym(&self, id: &str) -> &Symbol<'sid> {
+        self.try_get_symbol(id).unwrap()
     }
 
     /// Add a new rule
@@ -72,12 +81,12 @@ impl<'sid> Grammar<'sid> {
     {
         let rule = RuleDef::new(
             self.rules.len(),
-            self.get_symbol(lhs)
+            self.try_get_symbol(lhs)
                 .map(|sym| sym.id)
                 .ok_or(GrammarError::UnknownSymbol(lhs))?,
             rhs.into_iter()
                 .map(|id| {
-                    self.get_symbol(id)
+                    self.try_get_symbol(id)
                         .map(|sym| sym.id)
                         .ok_or(GrammarError::UnknownSymbol(id))
                 })
@@ -93,12 +102,12 @@ impl<'sid> Grammar<'sid> {
     fn borrow_rule(&self, def: &RuleDef<'sid>) -> Rule<'sid, '_> {
         Rule {
             id: def.id,
-            lhs: self.get_symbol(def.lhs).unwrap(),
+            lhs: self.try_get_symbol(def.lhs).unwrap(),
             rhs: def
                 .rhs
                 .clone()
                 .into_iter()
-                .map(|s| self.get_symbol(s))
+                .map(|s| self.try_get_symbol(s))
                 .collect::<Option<Vec<_>>>()
                 .unwrap(),
         }
@@ -111,5 +120,10 @@ impl<'sid> Grammar<'sid> {
 
     pub fn iter_terminal_symbols(&self) -> impl Iterator<Item = &Symbol<'sid>> {
         self.symbols.iter().filter(|sym| sym.terminal)
+    }
+
+
+    pub fn iter_non_terminal_symbols(&self) -> impl Iterator<Item = &Symbol<'sid>> {
+        self.symbols.iter().filter(|sym| !sym.terminal)
     }
 }

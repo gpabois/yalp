@@ -1,82 +1,75 @@
-use std::collections::HashMap;
+use std::fmt::Debug;
 
-use crate::{Grammar, RuleSet, Symbol};
-
-use self::{graph::Graph, table::Transition};
+use crate::{RuleId, Symbol};
 
 mod graph;
 mod item;
 mod table;
 
-pub enum Action {
-    Shift(usize),
-    Reduce(usize),
-    Accept,
+pub use table::*;
+
+pub type ItemSetId = usize;
+
+#[derive(Debug)]
+pub enum LrParserError<'sid, 'sym> {
+    MissingRule(RuleId),
+    MissingSet(ItemSetId),
+    ShiftReduceConflict {
+        state: ItemSetId,
+        symbol: &'sym Symbol<'sid>,
+        conflict: [Action; 2]
+    }
 }
 
-pub struct Row<'sym, 'sid> {
-    actions: HashMap<&'sym Symbol<'sid>, Action>,
-    goto: HashMap<&'sym Symbol<'sid>, usize>,
-}
-
-impl<'sym, 'sid> Row<'sym, 'sid> {
-    pub fn from_transition(
-        transition: Transition<'sid, 'sym, '_, '_>,
-        grammar: &'sym Grammar<'sid>,
-    ) -> Self {
-        if transition.from.has_item_reaching_eos() {
-            Row {
-                actions: [(grammar.eos(), Action::Accept)].into_iter().collect(),
-                goto: HashMap::default(),
-            }
-        } else if transition.from.has_terminating_item() {
-            let rule_id = transition.from.get_terminating_rule();
-
-            Row {
-                actions: grammar
-                    .iter_terminal_symbols()
-                    .map(|sym| (sym, Action::Reduce(rule_id)))
-                    .collect(),
-                goto: HashMap::default(),
-            }
-        } else {
-            Row {
-                actions: transition
-                    .edges
-                    .iter()
-                    .filter(|(sym, _)| sym.terminal)
-                    .map(|(sym, set)| (*sym, Action::Shift(set.id)))
-                    .collect(),
-                goto: transition
-                    .edges
-                    .iter()
-                    .filter(|(sym, _)| !sym.terminal)
-                    .map(|(sym, set)| (*sym, set.id))
-                    .collect(),
-            }
+impl std::fmt::Display for LrParserError<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LrParserError::MissingRule(id) => write!(f, "Missing rule #{}", id),
+            LrParserError::MissingSet(id) => write!(f, "Missing set #{}", id),
+            LrParserError::ShiftReduceConflict { state, symbol, conflict } => write!(f, "Shift/reduce conflict for symbol {}, step #{} ({:?})", symbol.id, state, conflict),
         }
     }
 }
 
-pub struct Table<'sym, 'sid>(Vec<Row<'sym, 'sid>>);
+pub type LrResult<'sid, 'sym, T> = Result<T, LrParserError<'sid, 'sym>>;
 
-impl<'sym, 'sid> Table<'sym, 'sid> {
-    fn from_graph(graph: &Graph<'sid, 'sym, '_>, grammar: &'sym Grammar<'sid>) -> Self {
-        Self(
-            graph
-                .iter_transitions()
-                .map(|t| Row::from_transition(t, grammar))
-                .collect(),
-        )
+
+
+#[cfg(test)]
+pub mod fixtures {
+    use crate::{Grammar, GrammarResult};
+
+    pub fn fixture_grammar() -> GrammarResult<'static, Grammar<'static>> {
+        let mut grammar = Grammar::default();
+
+        grammar
+            .add_terminal_symbol("0")?
+            .add_terminal_symbol("1")?
+            .add_terminal_symbol("+")?
+            .add_terminal_symbol("*")?
+            .add_non_terminal_symbol("E")?
+            .add_non_terminal_symbol("B")?;
+
+        grammar
+            .add_rule("<root>", ["E", "<eos>"])?
+            .add_rule("E", ["E", "*", "B"])?
+            .add_rule("E", ["E", "+", "B"])?
+            .add_rule("E", ["B"])?
+            .add_rule("B", ["0"])?
+            .add_rule("B", ["1"])?;
+
+        Ok(grammar)
     }
+}
 
-    /// Build a LR Table parser from a grammar.
-    pub fn build(grammar: &'sym Grammar<'sid>) -> Self {
-        let rules = RuleSet::new(grammar);
+#[cfg(test)]
+mod tests {
+    use super::{fixtures::fixture_grammar, Action, Row, Table};
 
-        let mut graph = Graph::new(&rules);
-        graph.build();
 
-        Table::from_graph(&graph, grammar)
+    #[test]
+    fn test_001_simple_table() {
+        let g = fixture_grammar().expect("Cannot create grammar");
+        let table = Table::build(&g).expect("Cannot build table");
     }
 }

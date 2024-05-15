@@ -1,4 +1,4 @@
-use super::{item::ItemSet, table::Transition};
+use super::{item::ItemSet, table::Transition, LrParserError, LrResult};
 use crate::{RuleSet, Symbol};
 
 pub struct Graph<'sid, 'sym, 'rule> {
@@ -47,14 +47,17 @@ impl<'sid, 'sym, 'rule> Graph<'sid, 'sym, 'rule> {
         self.get_id(&set).unwrap()
     }
 
-    pub fn build(&mut self) {
+    pub fn build(&mut self) -> LrResult<'sid, 'sym, ()> {
         let mut stack = vec![0];
         let rules = self.rules;
 
         while let Some(set_id) = stack.pop() {
-            self.get_mut(set_id).unwrap().close(rules);
+            self
+                .get_mut(set_id)
+                .ok_or(LrParserError::MissingSet(set_id))?
+                .close(rules);
 
-            for (symbol, kernel) in self.get(set_id).unwrap().reachable_sets() {
+            for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingSet(set_id))?.reachable_sets() {
                 let to_id = if !self.contains(&kernel) {
                     let id = self.push(kernel);
                     stack.push(id);
@@ -66,6 +69,8 @@ impl<'sid, 'sym, 'rule> Graph<'sid, 'sym, 'rule> {
                 self.transitions.push((set_id, symbol, to_id));
             }
         }
+
+        Ok(())
     }
 
     /// Iterate over all transition's table rows.

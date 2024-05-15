@@ -8,6 +8,7 @@ pub struct Symbol<'s> {
     /// Set the symbol as terminal
     pub terminal: bool,
     pub eos: bool,
+    pub root: bool
 }
 
 impl<'s> Symbol<'s> {
@@ -16,6 +17,7 @@ impl<'s> Symbol<'s> {
             id,
             terminal,
             eos: false,
+            root: false
         }
     }
 
@@ -24,7 +26,17 @@ impl<'s> Symbol<'s> {
             id: "<eos>",
             terminal: true,
             eos: true,
+            root: false
         }
+    }
+
+    pub fn root() -> Self {
+        Self {
+            id: "<root>",
+            terminal: false,
+            eos: false,
+            root: true
+        }  
     }
 }
 
