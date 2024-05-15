@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use prettytable::Table as PtTable;
+
 use super::{graph::Graph, item::ItemSet, ItemSetId, LrParserError, LrResult};
 use crate::{Grammar, RuleId, RuleSet, Symbol};
 
