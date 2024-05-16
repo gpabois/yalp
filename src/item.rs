@@ -5,7 +5,10 @@ use itertools::Itertools;
 use crate::{array::Array, Rule, RuleSet, Symbol};
 
 impl<'sid, 'sym> Rule<'sid, 'sym> {
-    pub fn at<'rule, const K: usize>(&'rule self, position: usize) -> Option<Item<'sid, 'sym, 'rule, K>> {
+    pub fn at<'rule, const K: usize>(
+        &'rule self,
+        position: usize,
+    ) -> Option<Item<'sid, 'sym, 'rule, K>> {
         Item::new(self, position)
     }
 }
@@ -13,12 +16,10 @@ impl<'sid, 'sym> Rule<'sid, 'sym> {
 impl<'sid, 'sym> RuleSet<'sid, 'sym> {
     /// Recursively fetch and append dot lookaheads
     fn rec_follow<'rule, const K: usize>(
-        &'rule self, 
-        source: &Array<K, &'sym Symbol<'sid>>, 
-        item: ItemCore<'sid, 'sym, 'rule>
-    ) 
-        -> Vec<Array<K, &'sym Symbol<'sid>>>
-    {
+        &'rule self,
+        source: &Array<K, &'sym Symbol<'sid>>,
+        item: ItemCore<'sid, 'sym, 'rule>,
+    ) -> Vec<Array<K, &'sym Symbol<'sid>>> {
         let mut arrays: Vec<Array<K, &'sym Symbol<'sid>>> = vec![];
 
         // No more space...
@@ -37,21 +38,24 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
             // Check the next item's follow set.
             else if let Some(nitem) = citem.next() {
                 arrays.extend(self.rec_follow(&carr, nitem));
-            } 
+            }
             // No more item possible.
             else {
                 arrays.push(carr);
             }
         }
-        
+
         arrays
     }
 
     // Fetch the new k terminal symbols from deriving the given non-terminal symbol.
-    pub fn first<'rule, const K: usize>(&'rule self, from: &'sym Symbol<'sid>) -> HashSet<Array<K, &'sym Symbol<'sid>>> {
+    pub fn first<'rule, const K: usize>(
+        &'rule self,
+        from: &'sym Symbol<'sid>,
+    ) -> HashSet<Array<K, &'sym Symbol<'sid>>> {
         if K == 0 {
-            return Default::default()
-        }      
+            return Default::default();
+        }
 
         let mut set: ItemSet<'sid, 'sym, 'rule, 0> = self
             .iter_symbol_related_rules(from)
@@ -64,7 +68,7 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
             return set
                 .iter_lookaheads()
                 .map(|(sym, _)| [sym].into_iter().collect())
-                .collect();   
+                .collect();
         }
 
         // We have K >= 2, it works with recursive dot lookaheads.
@@ -74,7 +78,6 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
                 self.rec_follow(&source, item)
             })
             .collect()
-
     }
 }
 
@@ -84,17 +87,19 @@ pub type ItemCore<'sid, 'sym, 'rule> = Item<'sid, 'sym, 'rule, 0>;
 ///
 /// # Example
 /// A -> w • eof
-/// 
+///
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Item<'sid, 'sym, 'rule, const K: usize> {
     pub rule: &'rule Rule<'sid, 'sym>,
     pub position: usize,
-    pub lookaheads: Array<K, &'sym Symbol<'sid>>
+    pub lookaheads: Array<K, &'sym Symbol<'sid>>,
 }
 
-impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> 
-{
-    pub fn dot_lookahead(&self, rules: &'rule RuleSet<'sid, 'sym>) -> Vec<(&'sym Symbol<'sid>, ItemCore<'sid, 'sym, 'rule>)> {
+impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
+    pub fn dot_lookahead(
+        &self,
+        rules: &'rule RuleSet<'sid, 'sym>,
+    ) -> Vec<(&'sym Symbol<'sid>, ItemCore<'sid, 'sym, 'rule>)> {
         let core = self.into_core();
 
         if let Some(&sym) = core.symbol().iter().find(|&sym| Symbol::is_terminal(sym)) {
@@ -103,9 +108,7 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K>
 
         let mut set = ItemSet::new([core], []);
         set.close(rules);
-        set
-            .iter_lookaheads()
-            .collect()
+        set.iter_lookaheads().collect()
     }
 }
 
@@ -120,15 +123,18 @@ impl<const K: usize> Hash for Item<'_, '_, '_, K> {
 impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
     fn new(rule: &'rule Rule<'sid, 'sym>, position: usize) -> Option<Self> {
         if rule.rhs.len() >= position {
-            Some(Self { rule, position, lookaheads: Default::default() })
+            Some(Self {
+                rule,
+                position,
+                lookaheads: Default::default(),
+            })
         } else {
             None
         }
     }
 
     /// Turns the item into its core (no lookaheads)
-    pub fn into_core(&self) -> ItemCore<'sid, 'sym, 'rule> 
-    {
+    pub fn into_core(&self) -> ItemCore<'sid, 'sym, 'rule> {
         ItemCore::new(self.rule, self.position).unwrap()
     }
 
@@ -136,11 +142,12 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
     ///
     /// # Example
     /// A -> w • eof
-    pub fn is_terminating(&self) -> bool {
+    pub fn is_exhausted(&self) -> bool {
         self.position >= self.rule.rhs.len()
     }
 
-    pub fn is_reaching_eos(&self) -> bool {
+    /// The item is reaching the end of stream (<eos>)
+    pub fn is_reaching_end(&self) -> bool {
         self.symbol().map(|sym| sym.eos).unwrap_or(false)
     }
 
@@ -152,6 +159,8 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
 
     /// Returns the next rule's item.
     ///
+    /// Returns None, if the current rule is exhausted.
+    ///
     /// # Example
     /// (A -> • w eof).next() -> (A -> w • eof)
     pub fn next(&self) -> Option<Self> {
@@ -159,20 +168,28 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
     }
 }
 
+/// A set of items.
+///
+/// The kernel is the original set of items before closure.
+/// Items are additional items from closure.
 #[derive(Debug, Default)]
 pub struct ItemSet<'sid, 'sym, 'rule, const K: usize> {
+    // Identifer of the item set.
     pub id: usize,
     kernel: HashSet<Item<'sid, 'sym, 'rule, K>>,
     items: Vec<Item<'sid, 'sym, 'rule, K>>,
 }
 
+/// Compares kernel sets.
 impl<'sid, 'sym, 'rule, const K: usize> PartialEq for ItemSet<'sid, 'sym, 'rule, K> {
     fn eq(&self, other: &Self) -> bool {
         self.kernel.eq(&other.kernel)
     }
 }
 
-impl<'sid, 'sym, 'rule, const K: usize> From<&'rule RuleSet<'sid, 'sym>> for ItemSet<'sid, 'sym, 'rule, K> {
+impl<'sid, 'sym, 'rule, const K: usize> From<&'rule RuleSet<'sid, 'sym>>
+    for ItemSet<'sid, 'sym, 'rule, K>
+{
     fn from(value: &'rule RuleSet<'sid, 'sym>) -> Self {
         value
             .iter_rules()
@@ -183,8 +200,10 @@ impl<'sid, 'sym, 'rule, const K: usize> From<&'rule RuleSet<'sid, 'sym>> for Ite
     }
 }
 
-impl<'sid, 'sym, 'rule, const K: usize> FromIterator<Item<'sid, 'sym, 'rule, K>> for ItemSet<'sid, 'sym, 'rule, K> {
-    /// Collect as the kernel's set.
+impl<'sid, 'sym, 'rule, const K: usize> FromIterator<Item<'sid, 'sym, 'rule, K>>
+    for ItemSet<'sid, 'sym, 'rule, K>
+{
+    /// Collect the iterator as a kernel set.
     fn from_iter<T: IntoIterator<Item = Item<'sid, 'sym, 'rule, K>>>(iter: T) -> Self {
         Self {
             id: 0,
@@ -193,7 +212,6 @@ impl<'sid, 'sym, 'rule, const K: usize> FromIterator<Item<'sid, 'sym, 'rule, K>>
         }
     }
 }
-
 
 impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
     pub fn new<I1, I2>(kernel: I1, items: I2) -> Self
@@ -209,45 +227,53 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
     }
 
     /// Returns a pair of (terminal, item who consumes it)
-    pub fn iter_lookaheads<'a>(&'a self) -> impl Iterator<Item=(&'sym Symbol<'sid>, ItemCore<'sid, 'sym, 'rule>)> + 'a {
-        self
-            .iter()
+    pub fn iter_lookaheads<'a>(
+        &'a self,
+    ) -> impl Iterator<Item = (&'sym Symbol<'sid>, ItemCore<'sid, 'sym, 'rule>)> + 'a {
+        self.iter()
             .flat_map(|i| i.symbol().map(|sym| (sym, i.into_core())))
             .filter(|(s, _)| s.is_terminal())
     }
-    
-    pub fn iter_terminal_symbols<'a>(&'a self) -> impl Iterator<Item=&'sym Symbol<'sid>> + 'a {
-        self
-            .iter()
+
+    pub fn iter_terminal_symbols<'a>(&'a self) -> impl Iterator<Item = &'sym Symbol<'sid>> + 'a {
+        self.iter()
             .flat_map(Item::symbol)
             .filter(|&s| s.is_terminal())
     }
 
+    pub fn iter_exhausted_items<'set>(
+        &'set self,
+    ) -> impl Iterator<Item = &'set Item<'sid, 'sym, 'rule, K>> + 'set {
+        self.iter().filter(|item| item.is_exhausted())
+    }
+
     /// Returns true if one of the item is terminating.
-    pub fn has_terminating_item(&self) -> bool {
-        self.iter().any(|item| item.is_terminating())
+    pub fn has_exhausted_items(&self) -> bool {
+        self.iter().any(|item| item.is_exhausted())
     }
 
     pub fn has_item_reaching_eos(&self) -> bool {
-        self.iter().any(|item| item.is_reaching_eos())
+        self.iter().any(|item| item.is_reaching_end())
     }
 
     pub fn get_terminating_rule(&self) -> usize {
         self.iter()
-            .find(|item| item.is_terminating())
+            .find(|item| item.is_exhausted())
             .map(|item| item.rule.id)
             .unwrap()
     }
 
+    /// Execute next for all items within the set.
     pub fn next(&self) -> Self {
         self.iter().flat_map(Item::next).collect()
     }
 
+    /// Iterate over all items within the set.
     pub fn iter(&self) -> impl Iterator<Item = &Item<'sid, 'sym, 'rule, K>> {
         return self.kernel.iter().chain(self.items.iter());
     }
 
-    pub fn push(&mut self, item: Item<'sid, 'sym, 'rule, K>) {
+    fn push(&mut self, item: Item<'sid, 'sym, 'rule, K>) {
         if !self.contains(&item) {
             self.items.push(item)
         }
@@ -255,19 +281,6 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
 
     pub fn contains(&self, item: &Item<'sid, 'sym, 'rule, K>) -> bool {
         self.kernel.contains(item) || self.items.contains(item)
-    }
-
-    pub fn pop(&mut self) -> Option<Item<'sid, 'sym, 'rule, K>> {
-        self.items.pop()
-    }
-
-    pub fn append<I>(&mut self, items: I)
-    where
-        I: Iterator<Item = Item<'sid, 'sym, 'rule, K>>,
-    {
-        for item in items {
-            self.push(item)
-        }
     }
 
     /// Iterable over all reachable sets from the current set.
@@ -283,7 +296,7 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
 
     /// Close the item set
     ///
-    /// It will fetch all rules until the next symbol is a terminal one, or we reach the end of a rule.
+    /// It will fetch all items until the next symbol is a terminal one, or we reach exhaustion.
     pub fn close(&mut self, rules: &'rule RuleSet<'sid, 'sym>) {
         let mut stack: Vec<_> = self.kernel.clone().into_iter().collect();
 
@@ -303,7 +316,6 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -354,9 +366,18 @@ mod tests {
         let expected_values: HashSet<Array<1, &Symbol<'_>>> = [
             Array::from_iter([g.sym("n")]),
             Array::from_iter([g.sym("+")]),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
-        println!("{{{}}}", rules.first::<1>(g.sym("<root>")).iter().map(|a| a.to_string()).join(", "));
+        println!(
+            "{{{}}}",
+            rules
+                .first::<1>(g.sym("<root>"))
+                .iter()
+                .map(|a| a.to_string())
+                .join(", ")
+        );
         assert_eq!(values, expected_values)
     }
 }
