@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use prettytable::Table as PtTable;
 
 use super::{graph::Graph, item::ItemSet, ItemSetId, LrParserError, LrResult};
-use crate::{Grammar, RuleId, RuleSet, Symbol};
+use crate::{array::Array, Grammar, Lookahead, RuleId, RuleSet, Symbol};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Action {
@@ -22,15 +22,15 @@ impl std::fmt::Display for Action {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Row<'sym, 'sid> {
-    actions: HashMap<&'sym Symbol<'sid>, Action>,
+pub struct Row<'sid, 'sym, const K: usize> {
+    actions: HashMap<Lookahead<'sid, 'sym, K>, Action>,
     goto: HashMap<&'sym Symbol<'sid>, ItemSetId>,
 }
 
-impl<'sym, 'sid> Row<'sym, 'sid> {
+impl<'sid, 'sym, const K: usize> Row<'sid, 'sym, K> {
     pub fn new<A,G>(actions: A, goto: G) -> Self 
         where 
-            A: IntoIterator<Item=(&'sym Symbol<'sid>, Action)>,
+            A: IntoIterator<Item=(Lookahead<'sid, 'sym, K>, Action)>,
             G: IntoIterator<Item=(&'sym Symbol<'sid>, ItemSetId)>,
     {
         Self {
@@ -40,9 +40,10 @@ impl<'sym, 'sid> Row<'sym, 'sid> {
     }
 }
 
-impl<'sym, 'sid> Row<'sym, 'sid> {
-    pub fn from_transition(
-        transition: Transition<'sid, 'sym, '_, '_>,
+impl<'sym, 'sid, const K: usize> Row<'sym, 'sid, K> 
+{
+    pub fn from_transition<const k: usize>(
+        transition: Transition<'sid, 'sym, '_, '_, k>,
         grammar: &'sym Grammar<'sid>,
     ) -> LrResult<'sym, 'sid, Self> {
         let mut actions = HashMap::<&'sym Symbol<'sid>, Action>::default();
@@ -64,7 +65,7 @@ impl<'sym, 'sid> Row<'sym, 'sid> {
                 .map(|(sym, set)| (*sym, Action::Shift(set.id))) {
                 
                 // Shift/reduce conflict
-                if actions.contains_key(sym) && matches!(actions[sym], Action::Reduce(_)) {
+                if actions.contains_key(&sym) && matches!(actions[sym], Action::Reduce(_)) {
                     return Err(LrParserError::ShiftReduceConflict {
                         state: transition.from.id,
                         symbol: sym,
@@ -91,19 +92,19 @@ impl<'sym, 'sid> Row<'sym, 'sid> {
 }
 
 #[derive(PartialEq)]
-pub struct Table<'sym, 'sid>{
+pub struct Table<'sym, 'sid, const K: usize>{
     grammar: &'sym Grammar<'sid>,
-    rows: Vec<Row<'sym, 'sid>>
+    rows: Vec<Row<'sym, 'sid, K>>
 }
 
-impl std::fmt::Debug for Table<'_, '_> {
+impl<const K: usize> std::fmt::Debug for Table<'_, '_, K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\n")?;
         <Self as std::fmt::Display>::fmt(&self, f)
     }
 }
 
-impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
+impl<'sym, 'sid, const K: usize> std::fmt::Display for Table<'sym, 'sid, K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut table = PtTable::new();
 
@@ -115,7 +116,7 @@ impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
                 .grammar
                 .iter_terminal_symbols()
                 .chain(self.grammar.iter_non_terminal_symbols())
-                .map(|sym| sym.id)
+                .map(|sym| sym.id.as_ref())
             )
             .collect()
         );
@@ -138,19 +139,19 @@ impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
     }
 }
 
-impl<'sym, 'sid> Table<'sym, 'sid> {
-    pub fn new<I>(grammar: &'sym Grammar<'sid>, rows: I) -> Self where I: IntoIterator<Item=Row<'sym, 'sid>>{
+impl<'sym, 'sid, const K: usize> Table<'sym, 'sid, K> {
+    pub fn new<I>(grammar: &'sym Grammar<'sid>, rows: I) -> Self where I: IntoIterator<Item=Row<'sym, 'sid, K>>{
         Self{
             grammar,
             rows: rows.into_iter().collect()
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item=&Row<'sym, 'sid>> {
+    fn iter(&self) -> impl Iterator<Item=&Row<'sym, 'sid, K>> {
         self.rows.iter()
     }
 
-    fn from_graph(graph: &Graph<'sid, 'sym, '_>, grammar: &'sym Grammar<'sid>) -> LrResult<'sym, 'sid, Self> {
+    fn from_graph(graph: &Graph<'sid, 'sym, '_, K>, grammar: &'sym Grammar<'sid>) -> LrResult<'sym, 'sid, Self> {
         Ok(Self{
             grammar,
             rows: graph
@@ -164,23 +165,22 @@ impl<'sym, 'sid> Table<'sym, 'sid> {
     pub fn build(grammar: &'sym Grammar<'sid>) -> LrResult<'sym, 'sid, Self> {
         let rules = RuleSet::new(grammar);
 
-        let mut graph = Graph::new(&rules);
+        let mut graph = Graph::<K>::new(&rules);
         graph.build()?;
 
         Table::from_graph(&graph, grammar)
     }
 }
 
-
-pub struct Transition<'sid, 'sym, 'rule, 'set> {
-    pub from: &'set ItemSet<'sid, 'sym, 'rule>,
-    pub edges: Vec<(&'sym Symbol<'sid>, &'set ItemSet<'sid, 'sym, 'rule>)>,
+pub struct Transition<'sid, 'sym, 'rule, 'set, const K: usize> {
+    pub from: &'set ItemSet<'sid, 'sym, 'rule, K>,
+    pub edges: Vec<(Lookahead<'sid, 'sym, K>, &'set ItemSet<'sid, 'sym, 'rule, K>)>,
 }
 
-impl<'sid, 'sym, 'rule, 'set> Transition<'sid, 'sym, 'rule, 'set> {
-    pub fn new<I>(from: &'set ItemSet<'sid, 'sym, 'rule>, edges: I) -> Self
+impl<'sid, 'sym, 'rule, 'set, const K: usize> Transition<'sid, 'sym, 'rule, 'set, K> {
+    pub fn new<I>(from: &'set ItemSet<'sid, 'sym, 'rule, K>, edges: I) -> Self
     where
-        I: Iterator<Item = (&'sym Symbol<'sid>, &'set ItemSet<'sid, 'sym, 'rule>)>,
+        I: Iterator<Item = (Lookahead<'sid, 'sym, K>, &'set ItemSet<'sid, 'sym, 'rule, K>)>,
     {
         Self {
             from,

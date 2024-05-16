@@ -82,7 +82,7 @@ impl<'sid> Grammar<'sid> {
         let rule = RuleDef::new(
             self.rules.len(),
             self.try_get_symbol(lhs)
-                .map(|sym| sym.id)
+                .map(|sym| sym.id.as_ref())
                 .ok_or(GrammarError::UnknownSymbol(lhs))?,
             rhs.into_iter()
                 .map(|id| {
