@@ -11,73 +11,100 @@ impl<'sid, 'sym> Rule<'sid, 'sym> {
     ) -> Option<Item<'sid, 'sym, 'rule, K>> {
         Item::new(self, position)
     }
+
+    pub fn follow<'rule>(&'rule self, symbol: &'sym Symbol<'sid>) 
+    -> impl Iterator<Item=ItemCore<'sid, 'sym, 'rule>> + 'rule {
+        self.rhs
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, &sym)| sym == *symbol)
+            //.inspect(|(_, sym)| println!("{}", sym))
+            .map(|(pos, _)| self.at::<0>(pos + 1
+            ).unwrap())
+            //.inspect(|i| println!("{}", i))
+            .filter(|i| i.is_exhausted() || i.is_symbol_terminal())
+    }
 }
 
 impl<'sid, 'sym> RuleSet<'sid, 'sym> {
-    /// Recursively fetch and append dot lookaheads
-    fn rec_follow<'rule, const K: usize>(
-        &'rule self,
-        source: &Array<K, &'sym Symbol<'sid>>,
-        item: ItemCore<'sid, 'sym, 'rule>,
-    ) -> Vec<Array<K, &'sym Symbol<'sid>>> {
-        let mut arrays: Vec<Array<K, &'sym Symbol<'sid>>> = vec![];
+    pub fn follow(&self, symbol: &'sym Symbol<'sid>) -> HashSet<&'sym Symbol<'sid>> {
+        let mut set = HashSet::default();
+        let mut visited = HashSet::<&'sym Symbol<'sid>>::default();
+        let mut stack = vec![symbol];
 
-        // No more space...
-        if source.is_full() {
-            return vec![source.clone()];
+        if symbol.is_start() {
+            return HashSet::from_iter([self.eos()]);
         }
 
-        for (csym, citem) in item.dot_lookahead(self) {
-            let mut carr = source.clone();
-            carr.push(csym);
+        while let Some(symbol) = stack.pop() {
+            if visited.contains(symbol) {
+                continue;
+            } else {
+                visited.insert(symbol);
+            }
 
-            // Cannot go further
-            if carr.is_full() {
-                arrays.push(carr);
-            }
-            // Check the next item's follow set.
-            else if let Some(nitem) = citem.next() {
-                arrays.extend(self.rec_follow(&carr, nitem));
-            }
-            // No more item possible.
-            else {
-                arrays.push(carr);
+            // Follow(X)
+            // Get all rules containing X in the rhs list.
+            for rule in self.iter().filter(|rule| rule.contains(&symbol)) {
+                for item in rule.follow(symbol) {
+                    // Follow(X, rule) -> {ItemCore...}
+                    // If : A → αX•
+                    if item.is_exhausted() {
+                        let mut subset = self.first(item.rule.lhs);
+                        subset.remove(self.epsilon());
+                        set.extend(subset);
+                    } 
+                    // A → αX•β
+                    else {
+                        let subset = self.first(item.symbol().unwrap());
+                        set.extend(subset);
+                    }
+                }
             }
         }
 
-        arrays
+        set          
     }
 
-    // Fetch the new k terminal symbols from deriving the given non-terminal symbol.
-    pub fn first<'rule, const K: usize>(
-        &'rule self,
-        from: &'sym Symbol<'sid>,
-    ) -> HashSet<Array<K, &'sym Symbol<'sid>>> {
-        if K == 0 {
-            return Default::default();
+    /// Fetch the terminal symbols from deriving the given non-terminal symbol.
+    pub fn first(&self, symbol: &'sym Symbol<'sid>) -> HashSet<&'sym Symbol<'sid>> {
+        if symbol.is_terminal() {
+            return HashSet::from_iter([symbol])
         }
 
-        let mut set: ItemSet<'sid, 'sym, 'rule, 0> = self
-            .iter_symbol_related_rules(from)
-            .flat_map(|rule| rule.at::<0>(0))
-            .collect();
+        let mut set = HashSet::default();
+        let mut visited = HashSet::<&'sym Symbol<'sid>>::default();
+        let mut stack = vec![symbol];
 
-        set.close(self);
+        while let Some(symbol) = stack.pop() {
+            if visited.contains(symbol) {
+                continue;
+            } else {
+                visited.insert(symbol);
+            }
 
-        if K == 1 {
-            return set
-                .iter_lookaheads()
-                .map(|(sym, _)| [sym].into_iter().collect())
-                .collect();
+            if symbol.is_terminal() {
+                set.insert(symbol);
+                continue;
+            }
+                
+            for rule in self.iter_by_symbol(symbol) {
+                let symbol = *rule.rhs.first().unwrap();
+                stack.push(symbol);
+            }            
         }
 
-        // We have K >= 2, it works with recursive dot lookaheads.
-        set.iter_lookaheads()
-            .flat_map(|(sym, item)| {
-                let source: Array<K, _> = [sym].into_iter().collect();
-                self.rec_follow(&source, item)
-            })
-            .collect()
+
+        set
+    }
+
+    /// Returns the start item set (#0)
+    /// 
+    /// # Panics
+    /// Panics if there are no start rule (#0), or the start rule is empty.
+    pub fn start_item_set<'rule, const K: usize>(&'rule self) -> ItemSet<'sid, 'sym, 'rule, K> {
+        [self.get(0).at(0).unwrap()].into_iter().collect()
     }
 }
 
@@ -95,20 +122,32 @@ pub struct Item<'sid, 'sym, 'rule, const K: usize> {
     pub lookaheads: Array<K, &'sym Symbol<'sid>>,
 }
 
-impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
-    pub fn dot_lookahead(
-        &self,
-        rules: &'rule RuleSet<'sid, 'sym>,
-    ) -> Vec<(&'sym Symbol<'sid>, ItemCore<'sid, 'sym, 'rule>)> {
-        let core = self.into_core();
+impl<const K: usize> std::fmt::Display for Item<'_, '_, '_, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let rhs = self.rule.rhs.iter().map(ToString::to_string).enumerate().map(|(pos, mut s)| {
+            if pos == self.position {
+                s.insert_str(0, "• ");
+            }
+            s
+        }).join(" ");
 
-        if let Some(&sym) = core.symbol().iter().find(|&sym| Symbol::is_terminal(sym)) {
-            return vec![(sym, core)];
+        write!(f, "{}. {} -> {}", self.rule.id, self.rule.lhs, rhs)?;
+        
+        if !self.lookaheads.is_empty() {
+            write!(f, ", {}", self.lookaheads)?;
         }
 
-        let mut set = ItemSet::new([core], []);
-        set.close(rules);
-        set.iter_lookaheads().collect()
+        Ok(())
+    }
+}
+
+impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
+    pub fn follow(&self) -> HashSet<&'sym Symbol<'sid>> {
+        self
+            .next()
+            .iter()
+            .filter(|item| item.is_symbol_terminal()).map(|item| item.symbol().unwrap())
+            .collect()
     }
 }
 
@@ -121,6 +160,7 @@ impl<const K: usize> Hash for Item<'_, '_, '_, K> {
 }
 
 impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
+    /// Creates a new rule
     fn new(rule: &'rule Rule<'sid, 'sym>, position: usize) -> Option<Self> {
         if rule.rhs.len() >= position {
             Some(Self {
@@ -141,14 +181,19 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
     /// Check if we reached the end of a rule.
     ///
     /// # Example
-    /// A -> w • eof
+    /// A -> w •
     pub fn is_exhausted(&self) -> bool {
         self.position >= self.rule.rhs.len()
     }
 
     /// The item is reaching the end of stream (<eos>)
     pub fn is_reaching_end(&self) -> bool {
-        self.symbol().map(|sym| sym.eos).unwrap_or(false)
+        self.symbol().map(|sym| sym.is_eos()).unwrap_or(false)
+    }
+
+    /// The item is reaching immediately a terminal symbol
+    pub fn is_symbol_terminal(&self) -> bool {
+        self.symbol().map(|symbol| symbol.is_terminal()).unwrap_or(false)
     }
 
     /// Returns the current symbol.
@@ -192,7 +237,7 @@ impl<'sid, 'sym, 'rule, const K: usize> From<&'rule RuleSet<'sid, 'sym>>
 {
     fn from(value: &'rule RuleSet<'sid, 'sym>) -> Self {
         value
-            .iter_rules()
+            .iter()
             .next()
             .and_then(|rule| rule.at(0))
             .into_iter()
@@ -226,21 +271,17 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         }
     }
 
-    /// Returns a pair of (terminal, item who consumes it)
-    pub fn iter_lookaheads<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (&'sym Symbol<'sid>, ItemCore<'sid, 'sym, 'rule>)> + 'a {
-        self.iter()
-            .flat_map(|i| i.symbol().map(|sym| (sym, i.into_core())))
-            .filter(|(s, _)| s.is_terminal())
-    }
-
     pub fn iter_terminal_symbols<'a>(&'a self) -> impl Iterator<Item = &'sym Symbol<'sid>> + 'a {
         self.iter()
             .flat_map(Item::symbol)
             .filter(|&s| s.is_terminal())
     }
 
+    pub fn iter_immediate_terminal_items<'set>(&'set self) -> impl Iterator<Item = &'set Item<'sid, 'sym, 'rule, K>> + 'set {
+        self.iter().filter(|item| item.is_symbol_terminal())
+    }
+
+    /// Iterate over all exhausted items (A -> w •)
     pub fn iter_exhausted_items<'set>(
         &'set self,
     ) -> impl Iterator<Item = &'set Item<'sid, 'sym, 'rule, K>> + 'set {
@@ -294,6 +335,14 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
             .collect()
     }
 
+    /// This methods is the union of all follow sets of all items which is followed by the given symbol.
+    pub fn follow(&self, symbol: &'sym Symbol<'sid>) -> HashSet<&'sym Symbol<'sid>> {
+        self
+            .iter()
+            .filter(|item| item.symbol() == Some(symbol))
+            .flat_map(Item::follow)
+            .collect()
+    }
     /// Close the item set
     ///
     /// It will fetch all items until the next symbol is a terminal one, or we reach exhaustion.
@@ -301,10 +350,10 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         let mut stack: Vec<_> = self.kernel.clone().into_iter().collect();
 
         while let Some(item) = stack.pop() {
-            if item.symbol().map(|sym| !sym.terminal).unwrap_or(false) {
+            if item.symbol().map(|sym| !sym.is_terminal()).unwrap_or(false) {
                 let sym = item.symbol().unwrap();
                 for item in rules
-                    .iter_symbol_related_rules(sym)
+                    .iter_by_symbol(sym)
                     .flat_map(|rule| rule.at(0))
                 {
                     if !self.contains(&item) {
@@ -320,10 +369,6 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-
-    use itertools::Itertools;
-
-    use crate::array::Array;
     use crate::{ItemSet, RuleSet, Symbol};
 
     use crate::fixtures::{fixture_lr0_grammar, fixture_lr1_grammar};
@@ -333,7 +378,7 @@ mod tests {
         let grammar = fixture_lr0_grammar().expect("Cannot generate grammar");
         let rules = RuleSet::new(&grammar);
 
-        let mut set = ItemSet::<0>::from(&rules);
+        let mut set = rules.start_item_set::<0>();
         set.close(&rules);
 
         let expected_set = ItemSet::new(
@@ -359,25 +404,20 @@ mod tests {
     }
 
     #[test]
-    fn test_002_first_1_set() {
+    fn test_002_first_set() {
         let g = fixture_lr1_grammar().expect("cannot create LR(1) grammar");
         let rules = RuleSet::new(&g);
-        let values = rules.first::<1>(g.sym("T"));
-        let expected_values: HashSet<Array<1, &Symbol<'_>>> = [
-            Array::from_iter([g.sym("n")]),
-            Array::from_iter([g.sym("+")]),
-        ]
-        .into_iter()
-        .collect();
+        let values = rules.first(g.sym("T"));
+        let expected_values: HashSet<&Symbol<'_>> = HashSet::from_iter([g.sym("n"), g.sym("+")]);
 
-        println!(
-            "{{{}}}",
-            rules
-                .first::<1>(g.sym("<root>"))
-                .iter()
-                .map(|a| a.to_string())
-                .join(", ")
-        );
         assert_eq!(values, expected_values)
+    }
+
+    #[test]
+    fn test_003_follow_set() {
+        let g = fixture_lr1_grammar().expect("cannot create LR(1) grammar");
+        let rules = RuleSet::new(&g);      
+        let values = rules.follow(g.sym("E"));
+        println!("{:#?}", values);
     }
 }

@@ -1,14 +1,21 @@
 use std::hash::Hash;
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum SymbolKind {
+    Normal,
+    EOS,
+    Start,
+    Epsilon
+}
+
 /// Defines a symbol
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Symbol<'s> {
     /// *Unique* identifier of the symbol
     pub id: &'s str,
     /// Set the symbol as terminal
-    pub terminal: bool,
-    pub eos: bool,
-    pub root: bool
+    terminal: bool,
+    kind: SymbolKind
 }
 
 impl std::fmt::Display for Symbol<'_> {
@@ -18,34 +25,61 @@ impl std::fmt::Display for Symbol<'_> {
 }
 
 impl<'s> Symbol<'s> {
+    /// Creates a new symbol
     pub fn new(id: &'s str, terminal: bool) -> Self {
         Self {
             id: id.into(),
             terminal,
-            eos: false,
-            root: false
+            kind: SymbolKind::Normal
         }
     }
 
+    #[inline(always)]
     pub fn is_terminal(&self) -> bool {
         self.terminal
     }
 
+    #[inline(always)]
+    pub fn is_eos(&self) -> bool {
+        matches!(self.kind, SymbolKind::EOS)
+    }
+
+    #[inline(always)]
+    pub fn is_start(&self) -> bool {
+        matches!(self.kind, SymbolKind::Start)
+    }
+
+    #[inline(always)]
+    pub fn is_epsilon(&self) -> bool {
+        matches!(self.kind, SymbolKind::Epsilon)
+    }
+
+    /// Creates and end-of-stream token ($)
     pub fn eos() -> Self {
         Self {
             id: "<eos>".into(),
             terminal: true,
-            eos: true,
-            root: false
+            kind: SymbolKind::EOS
         }
     }
 
-    pub fn root() -> Self {
+    /// Creates a start symbol (S)
+    pub fn start() -> Self {
         Self {
-            id: "<root>".into(),
+            id: "<start>".into(),
             terminal: false,
-            eos: false,
-            root: true
+            kind: SymbolKind::Start
+        }  
+    }
+
+    /// Creates an epsilon symbol (ε)
+    /// 
+    /// This is used for empty rule such as A -> ε ;
+    pub fn epsilon() -> Self {
+        Self {
+            id: "<eps>".into(),
+            terminal: true,
+            kind: SymbolKind::Epsilon
         }  
     }
 }

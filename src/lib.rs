@@ -9,7 +9,7 @@ mod array;
 
 pub use item::*;
 pub use lookahead::*;
-pub use grammar::*;
+pub use grammar::{Grammar, GrammarResult, GrammarError};
 pub use rule::*;
 pub use symbol::*;
 
@@ -29,7 +29,7 @@ pub mod fixtures {
             .add_non_terminal_symbol("T")?;
 
         grammar
-            .add_rule("<root>", ["E", "<eos>"])?
+            .add_rule("<start>", ["E", "<eos>"])?
             .add_rule("E", ["T"])?
             .add_rule("E", ["(", "E", ")"])?
             .add_rule("T", ["n"])?
@@ -50,7 +50,7 @@ pub mod fixtures {
             .add_non_terminal_symbol("B")?;
 
         grammar
-            .add_rule("<root>", ["E", "<eos>"])?
+            .add_rule("<start>", ["E", "<eos>"])?
             .add_rule("E", ["E", "*", "B"])?
             .add_rule("E", ["E", "+", "B"])?
             .add_rule("E", ["B"])?
