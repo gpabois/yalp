@@ -1,18 +1,20 @@
-use super::{item::ItemSet, table::Transition, LrParserError, LrResult};
-use crate::{RuleSet, Symbol};
+use std::collections::{HashMap, HashSet};
 
-pub struct Graph<'sid, 'sym, 'rule, const k: usize> {
+use super::{LrParserError, LrResult};
+use crate::{ItemSet, ItemSetId, RuleSet, Symbol};
+
+pub struct Graph<'sid, 'sym, 'rule, const K: usize> {
     rules: &'rule RuleSet<'sid, 'sym>,
-    sets: Vec<ItemSet<'sid, 'sym, 'rule, k>>,
-    transitions: Vec<(usize, &'sym Symbol<'sid>, usize)>,
+    pub (super) sets: Vec<ItemSet<'sid, 'sym, 'rule, K>>,
+    pub (super) transitions: Vec<(ItemSetId, &'sym Symbol<'sid>, ItemSetId)>
 }
 
 impl<'sid, 'sym, 'rule, const k: usize> Graph<'sid, 'sym, 'rule, k> {
     pub fn new(rules: &'rule RuleSet<'sid, 'sym>) -> Self {
         Self {
             rules,
-            sets: vec![ItemSet::from_iter([rules.get(0).at(0).unwrap()])],
-            transitions: vec![],
+            sets: vec![rules.start_item_set()],
+            transitions: vec![]
         }
     }
     /// Returns true if a set has the same kernel.
@@ -71,20 +73,5 @@ impl<'sid, 'sym, 'rule, const k: usize> Graph<'sid, 'sym, 'rule, k> {
         }
 
         Ok(())
-    }
-
-    /// Iterate over all transition's table rows.
-    pub fn iter_transitions<'set>(
-        &'set self,
-    ) -> impl Iterator<Item = Transition<'sid, 'sym, 'rule, 'set, k>> {
-        self.sets.iter().map(|set| {
-            Transition::new(
-                set,
-                self.transitions
-                    .iter()
-                    .filter(|t| t.0 == set.id)
-                    .map(|t| (t.1, self.get(t.2).unwrap())),
-            )
-        })
     }
 }

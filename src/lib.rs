@@ -1,5 +1,5 @@
 pub mod grammar;
-//pub mod lr;
+pub mod lr;
 pub mod rule;
 pub mod symbol;
 pub mod item;

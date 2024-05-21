@@ -4,6 +4,8 @@ use itertools::Itertools;
 
 use crate::{array::Array, Rule, RuleSet, Symbol};
 
+pub type ItemSetId = usize;
+
 impl<'sid, 'sym> Rule<'sid, 'sym> {
     pub fn at<'rule, const K: usize>(
         &'rule self,
@@ -50,11 +52,9 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
             for rule in self.iter().filter(|rule| rule.contains(symbol)) {
                 for item in rule.follow(symbol) {
                     // Follow(X, rule) -> {ItemCore...}
-                    // If : A → αX•, we add First(A) to the Set.
+                    // If : A → αX•, we add Follow(A) to the Set.
                     if item.is_exhausted() {
-                        let mut subset = self.follow(item.rule.lhs);
-                        subset.remove(self.epsilon());
-                        set.extend(subset);
+                        stack.push(item.rule.lhs);
                     }
                     // A → αX•β
                     else {
@@ -104,7 +104,16 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
     /// # Panics
     /// Panics if there are no start rule (#0), or the start rule is empty.
     pub fn start_item_set<'rule, const K: usize>(&'rule self) -> ItemSet<'sid, 'sym, 'rule, K> {
-        [self.get(0).at(0).unwrap()].into_iter().collect()
+        let mut start = self
+            .get(0)
+            .at::<K>(0)
+            .unwrap();
+        
+        if K > 0 {
+            start.lookaheads = Array::from_iter([self.eos()]);
+        }
+
+        [start].into_iter().collect()
     }
 }
 
@@ -306,7 +315,7 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         self.iter().any(|item| item.is_reaching_end())
     }
 
-    pub fn get_terminating_rule(&self) -> usize {
+    pub fn get_exhausted_rule(&self) -> usize {
         self.iter()
             .find(|item| item.is_exhausted())
             .map(|item| item.rule.id)
@@ -358,6 +367,24 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
             .flat_map(|item| item.follow(rules))
             .collect()
     }
+
+    /// Add lookaheads to the items.  
+    /// 
+    /// TODO : Can be improved with cached follow sets.
+    pub fn add_lookaheads(&mut self, rules: &'rule RuleSet<'sid, 'sym>) {
+        let mut items = Vec::<Item<'sid, 'sym, 'rule, K>>::default();
+
+        for item in self.items.iter() {
+            for symbol in rules.follow(item.rule.lhs) {
+                let mut item = item.clone();
+                item.lookaheads = [symbol].into_iter().collect();
+                items.push(item);
+            }
+        }
+
+        self.items = items;
+    }
+
     /// Close the item set
     ///
     /// It will fetch all items until the next symbol is a terminal one, or we reach exhaustion.
@@ -365,7 +392,7 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         let mut stack: Vec<_> = self.kernel.clone().into_iter().collect();
 
         while let Some(item) = stack.pop() {
-            if item.symbol().map(|sym| !sym.is_terminal()).unwrap_or(false) {
+            if !item.is_symbol_terminal() {
                 let sym = item.symbol().unwrap();
                 for item in rules.iter_by_symbol(sym).flat_map(|rule| rule.at(0)) {
                     if !self.contains(&item) {
@@ -375,8 +402,13 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
                 }
             }
         }
+
+        if K == 1 {
+            self.add_lookaheads(rules);
+        }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -440,17 +472,22 @@ mod tests {
         let g = fixture_lr1_grammar().expect("cannot create LR(1) grammar");
         let rules = RuleSet::new(&g);
 
+        let values = rules.follow(g.start());
+        let expected_values = HashSet::from_iter([g.eos()]);
+        assert_eq!(values, expected_values);
+
         let values = rules.follow(g.sym("T"));
-        let expected_values = HashSet::from_iter([g.sym(")"), g.sym("+"), g.sym("n")]);
+        let expected_values = HashSet::from_iter([g.sym(")"), g.sym("+"), g.eos()]);
         assert_eq!(values, expected_values);
     }
 
     #[test]
-    /// Follow(I, A)
+    /// Follow(In, A)
     fn test_004_item_set_follow_set() {
         let g = fixture_lr1_grammar().expect("cannot create LR(1) grammar");
         let rules = RuleSet::new(&g);
-        let i0 = rules.start_item_set::<0>();
+        let mut i0 = rules.start_item_set::<0>();
+        i0.close(&rules);
 
         let mut values = i0.follow(g.start(), &rules);
         let mut expected_values = HashSet::from_iter([g.eos()]);

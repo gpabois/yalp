@@ -1,19 +1,22 @@
 use std::fmt::Debug;
 
-use crate::{RuleId, Symbol};
+use crate::{ItemSetId, RuleId, Symbol};
 
+mod transition;
+mod action;
 mod graph;
-mod item;
 mod table;
 
+use graph::*;
+use transition::*;
+pub use action::*;
 pub use table::*;
-
-pub type ItemSetId = usize;
 
 #[derive(Debug)]
 pub enum LrParserError<'sid, 'sym> {
     MissingRule(RuleId),
     MissingSet(ItemSetId),
+    UnsupportedLrRank,
     ShiftReduceConflict {
         state: ItemSetId,
         symbol: &'sym Symbol<'sid>,
@@ -27,22 +30,14 @@ impl std::fmt::Display for LrParserError<'_, '_> {
             LrParserError::MissingRule(id) => write!(f, "Missing rule #{}", id),
             LrParserError::MissingSet(id) => write!(f, "Missing set #{}", id),
             LrParserError::ShiftReduceConflict { state, symbol, conflict } => write!(f, "Shift/reduce conflict for symbol {}, step #{} ({:?})", symbol.id, state, conflict),
+            LrParserError::UnsupportedLrRank => write!(f, "Cannot build LR table for K > 1."),
         }
     }
 }
 
 pub type LrResult<'sid, 'sym, T> = Result<T, LrParserError<'sid, 'sym>>;
 
-
-
 #[cfg(test)]
 mod tests {
-    use super::{fixtures::fixture_grammar, Table};
 
-
-    #[test]
-    fn test_001_simple_table() {
-        let g = fixture_grammar().expect("Cannot create grammar");
-        let table = Table::<0>::build(&g).expect("Cannot build table");
-    }
 }
