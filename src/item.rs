@@ -133,7 +133,7 @@ pub struct Item<'sid, 'sym, 'rule, const K: usize> {
 
 impl<const K: usize> std::fmt::Display for Item<'_, '_, '_, K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let rhs = self
+        let mut rhs = self
             .rule
             .rhs
             .iter()
@@ -146,6 +146,10 @@ impl<const K: usize> std::fmt::Display for Item<'_, '_, '_, K> {
                 s
             })
             .join(" ");
+        
+        if self.is_exhausted() {
+            rhs.push_str(" •")
+        }
 
         write!(f, "{}. {} -> {}", self.rule.id, self.rule.lhs, rhs)?;
 
@@ -205,6 +209,11 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
         self.symbol().map(|sym| sym.is_eos()).unwrap_or(false)
     }
 
+    pub fn is_symbol_non_terminal(&self) -> bool {
+        self.symbol()
+            .map(|symbol| !symbol.is_terminal())
+            .unwrap_or(false)    
+    }
     /// The item is reaching immediately a terminal symbol
     pub fn is_symbol_terminal(&self) -> bool {
         self.symbol()
@@ -239,6 +248,16 @@ pub struct ItemSet<'sid, 'sym, 'rule, const K: usize> {
     pub id: usize,
     kernel: HashSet<Item<'sid, 'sym, 'rule, K>>,
     items: Vec<Item<'sid, 'sym, 'rule, K>>,
+}
+
+impl<'sid, 'sym, 'rule, const K: usize> std::fmt::Display for ItemSet<'sid, 'sym, 'rule, K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}{{", self.id)?;
+        for item in self.iter() {
+            write!(f, "{},", item)?;
+        }
+        write!(f, "}}")
+    }
 }
 
 /// Compares kernel sets.
@@ -345,12 +364,21 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
     /// Iterable over all reachable sets from the current set.
     ///
     /// The transition returns the symbol, and the kernel.
-    pub fn reachable_sets(&self) -> Vec<(&'sym Symbol<'sid>, ItemSet<'sid, 'sym, 'rule, K>)> {
-        self.iter()
-            .group_by(|item| item.rule.lhs)
-            .into_iter()
-            .map(|(sym, items)| (sym, items.flat_map(|item| item.next()).collect()))
+    pub fn reachable_sets(&self, rules: &'rule RuleSet<'sid, 'sym>) -> Vec<(&'sym Symbol<'sid>, ItemSet<'sid, 'sym, 'rule, K>)> {
+        rules
+            .iter_symbols()
+            .filter(|sym| !(sym.is_eos() || sym.is_epsilon()))
+            .map(|sym| (
+                sym, 
+                ItemSet::from_iter(
+                    self.iter()
+                        .filter(|item| item.symbol() == Some(sym))
+                        .cloned()
+                )
+            ))
+            .map(|(sym, set)| (sym, set.next()))
             .collect()
+
     }
 
     /// This methods is the union of all follow sets of all items which is followed by the given symbol.
@@ -392,7 +420,7 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         let mut stack: Vec<_> = self.kernel.clone().into_iter().collect();
 
         while let Some(item) = stack.pop() {
-            if !item.is_symbol_terminal() {
+            if item.is_symbol_non_terminal() {
                 let sym = item.symbol().unwrap();
                 for item in rules.iter_by_symbol(sym).flat_map(|rule| rule.at(0)) {
                     if !self.contains(&item) {

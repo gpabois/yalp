@@ -82,25 +82,15 @@ impl<'sym, 'sid> Row<'sym, 'sid>
     ) -> LrResult<'sym, 'sid, Self> {
             let mut actions = HashMap::<&'sym Symbol<'sid>, Action>::default();
             let mut goto = HashMap::<&'sym Symbol<'sid>, ItemSetId>::default();
-    
-            if transition.from.has_item_reaching_eos() {
-                actions.insert(grammar.eos(), Action::Accept);
-            }
-            
-            if transition.from.has_exhausted_items() {
-                let rule_id = transition.from.get_exhausted_rule();
-                actions.extend(grammar
-                    .iter_terminal_symbols()
-                    .map(|sym| (sym, Action::Reduce(rule_id)))
-                );
-            } 
 
             for (sym, action) in transition
                 .edges
                 .iter()
                 .filter(|(sym, _)| sym.is_terminal())
+                .filter(|(sym, _)| !sym.is_eos())
+                .filter(|(sym, _)| !sym.is_epsilon())
                 .map(|(sym, set)| (*sym, Action::Shift(set.id))) {
-                
+
                 // Shift/reduce conflict
                 if actions.contains_key(&sym) && matches!(actions[sym], Action::Reduce(_)) {
                     return Err(LrParserError::ShiftReduceConflict {
@@ -123,6 +113,19 @@ impl<'sym, 'sid> Row<'sym, 'sid>
                 .map(|(sym, set)| (*sym, set.id))
             );
     
+            if transition.from.has_item_reaching_eos() {
+                actions.insert(grammar.eos(), Action::Accept);
+            }
+            
+            if transition.from.has_exhausted_items() {
+                println!("{}", transition.from);
+                let rule_id = transition.from.get_exhausted_rule();
+                actions.extend(grammar
+                    .iter_terminal_symbols()
+                    .map(|sym| (sym, Action::Reduce(rule_id)))
+                );
+            } 
+            
             Ok(Self::new(actions, goto))
     }
     pub fn from_transition<const K: usize>(

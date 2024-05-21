@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use super::{LrParserError, LrResult};
 use crate::{ItemSet, ItemSetId, RuleSet, Symbol};
 
@@ -9,7 +7,7 @@ pub struct Graph<'sid, 'sym, 'rule, const K: usize> {
     pub (super) transitions: Vec<(ItemSetId, &'sym Symbol<'sid>, ItemSetId)>
 }
 
-impl<'sid, 'sym, 'rule, const k: usize> Graph<'sid, 'sym, 'rule, k> {
+impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
     pub fn new(rules: &'rule RuleSet<'sid, 'sym>) -> Self {
         Self {
             rules,
@@ -17,20 +15,21 @@ impl<'sid, 'sym, 'rule, const k: usize> Graph<'sid, 'sym, 'rule, k> {
             transitions: vec![]
         }
     }
+    
     /// Returns true if a set has the same kernel.
-    fn contains(&self, set: &ItemSet<'sid, 'sym, 'rule, k>) -> bool {
+    fn contains(&self, set: &ItemSet<'sid, 'sym, 'rule, K>) -> bool {
         self.sets.iter().any(|s| s == set)
     }
 
-    fn get_mut(&mut self, id: usize) -> Option<&mut ItemSet<'sid, 'sym, 'rule, k>> {
+    fn get_mut(&mut self, id: usize) -> Option<&mut ItemSet<'sid, 'sym, 'rule, K>> {
         self.sets.get_mut(id)
     }
 
-    fn get(&self, id: usize) -> Option<&ItemSet<'sid, 'sym, 'rule, k>> {
+    fn get(&self, id: usize) -> Option<&ItemSet<'sid, 'sym, 'rule, K>> {
         self.sets.get(id)
     }
 
-    fn get_id(&self, kernel: &ItemSet<'sid, 'sym, 'rule, k>) -> Option<usize> {
+    fn get_id(&self, kernel: &ItemSet<'sid, 'sym, 'rule, K>) -> Option<usize> {
         self.sets
             .iter()
             .find(|set| *set == kernel)
@@ -38,7 +37,7 @@ impl<'sid, 'sym, 'rule, const k: usize> Graph<'sid, 'sym, 'rule, k> {
     }
 
     /// Push a new set in the graph, if it does not yet exist.
-    fn push(&mut self, mut set: ItemSet<'sid, 'sym, 'rule, k>) -> usize {
+    fn push(&mut self, mut set: ItemSet<'sid, 'sym, 'rule, K>) -> usize {
         if !self.contains(&set) {
             let id = self.sets.len();
             set.id = id;
@@ -59,7 +58,7 @@ impl<'sid, 'sym, 'rule, const k: usize> Graph<'sid, 'sym, 'rule, k> {
                 .ok_or(LrParserError::MissingSet(set_id))?
                 .close(rules);
 
-            for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingSet(set_id))?.reachable_sets() {
+            for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingSet(set_id))?.reachable_sets(rules) {
                 let to_id = if !self.contains(&kernel) {
                     let id = self.push(kernel);
                     stack.push(id);

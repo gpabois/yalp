@@ -39,5 +39,21 @@ pub type LrResult<'sid, 'sym, T> = Result<T, LrParserError<'sid, 'sym>>;
 
 #[cfg(test)]
 mod tests {
+    use crate::fixtures::{fixture_lr0_grammar, fixture_lr1_grammar};
 
+    use super::Table;
+
+    #[test]
+    pub fn test_lr0_grammar_table_building() {
+        let g = fixture_lr0_grammar().expect("cannot build LR(0) grammar.");
+        let table = Table::build::<0>(&g).expect("cannot build table");
+        println!("{}", table);
+    }
+
+    #[test]
+    pub fn test_lr1_grammar_table_building() {
+        let g = fixture_lr1_grammar().expect("cannot build LR(1) grammar.");
+        let table = Table::build::<1>(&g).expect("cannot build table");
+        println!("{}", table);
+    }
 }
