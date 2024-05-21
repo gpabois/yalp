@@ -23,13 +23,13 @@ pub type GrammarResult<'s, T> = Result<T, GrammarError<'s>>;
 
 #[derive(Debug, PartialEq)]
 /// A grammar
-/// 
+///
 /// A grammar requires a rule to produce the <start> token, which must have <eos> token
-/// 
+///
 /// # Example
-/// 
+///
 /// For the following grammar :
-/// 
+///
 /// ```grammar
 /// 1. <start> := E <eos>
 /// 2. E := E * B
@@ -38,12 +38,12 @@ pub type GrammarResult<'s, T> = Result<T, GrammarError<'s>>;
 /// 5. B := 0
 /// 6. B := 1
 /// ```
-/// 
+///
 /// ```
 /// use crate::Gammar;
-/// 
+///
 /// let mut grammar = Grammar::default();
-/// 
+///
 /// grammar
 ///     .add_terminal_symbol("*")?
 ///     .add_terminal_symbol("+")?
@@ -82,7 +82,7 @@ impl<'sid> Grammar<'sid> {
     }
 
     /// Add a non-terminal symbol in the grammar.
-    /// 
+    ///
     /// Returns an error if a symbol with the same id already exists.
     pub fn add_non_terminal_symbol(&mut self, id: &'sid str) -> GrammarResult<'sid, &mut Self> {
         if self.try_get_symbol(id).is_some() {
@@ -94,7 +94,7 @@ impl<'sid> Grammar<'sid> {
     }
 
     /// Add a terminal symbol in the grammar.
-    /// 
+    ///
     /// Returns an error if a symbol with the same id already exists.
     pub fn add_terminal_symbol(&mut self, id: &'sid str) -> GrammarResult<'sid, &mut Self> {
         if self.try_get_symbol(id).is_some() {
@@ -111,7 +111,7 @@ impl<'sid> Grammar<'sid> {
     }
 
     /// Returns the symbol behind the ID
-    /// 
+    ///
     /// # Panics
     /// Panics if no symbol match the ID.
     pub fn sym(&self, id: &str) -> &Symbol<'sid> {
@@ -119,7 +119,7 @@ impl<'sid> Grammar<'sid> {
     }
 
     /// Add a new rule
-    /// 
+    ///
     /// Returns an error if a symbol defined in the rule does not exist within the grammar.
     pub fn add_rule<I>(&mut self, lhs: &'sid str, rhs: I) -> GrammarResult<'sid, &mut Self>
     where
@@ -128,7 +128,7 @@ impl<'sid> Grammar<'sid> {
         let mut rule = RuleDef::new(
             self.rules.len(),
             self.try_get_symbol(lhs)
-                .map(|sym| sym.id.as_ref())
+                .map(|sym| sym.id)
                 .ok_or(GrammarError::UnknownSymbol(lhs))?,
             rhs.into_iter()
                 .map(|id| {
@@ -147,7 +147,6 @@ impl<'sid> Grammar<'sid> {
 
         Ok(self)
     }
-
 
     /// Iterate over all rules of the grammar
     pub fn iter_rules<'sym>(&'sym self) -> impl Iterator<Item = Rule<'sid, 'sym>> {
@@ -179,3 +178,4 @@ impl<'sid> Grammar<'sid> {
         }
     }
 }
+

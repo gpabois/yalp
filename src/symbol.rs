@@ -5,7 +5,7 @@ pub enum SymbolKind {
     Normal,
     EOS,
     Start,
-    Epsilon
+    Epsilon,
 }
 
 /// Defines a symbol
@@ -15,7 +15,7 @@ pub struct Symbol<'s> {
     pub id: &'s str,
     /// Set the symbol as terminal
     terminal: bool,
-    kind: SymbolKind
+    kind: SymbolKind,
 }
 
 impl std::fmt::Display for Symbol<'_> {
@@ -28,9 +28,9 @@ impl<'s> Symbol<'s> {
     /// Creates a new symbol
     pub fn new(id: &'s str, terminal: bool) -> Self {
         Self {
-            id: id.into(),
+            id,
             terminal,
-            kind: SymbolKind::Normal
+            kind: SymbolKind::Normal,
         }
     }
 
@@ -57,30 +57,30 @@ impl<'s> Symbol<'s> {
     /// Creates and end-of-stream token ($)
     pub fn eos() -> Self {
         Self {
-            id: "<eos>".into(),
+            id: "<eos>",
             terminal: true,
-            kind: SymbolKind::EOS
+            kind: SymbolKind::EOS,
         }
     }
 
     /// Creates a start symbol (S)
     pub fn start() -> Self {
         Self {
-            id: "<start>".into(),
+            id: "<start>",
             terminal: false,
-            kind: SymbolKind::Start
-        }  
+            kind: SymbolKind::Start,
+        }
     }
 
     /// Creates an epsilon symbol (ε)
-    /// 
+    ///
     /// This is used for empty rule such as A -> ε ;
     pub fn epsilon() -> Self {
         Self {
-            id: "<eps>".into(),
+            id: "<eps>",
             terminal: true,
-            kind: SymbolKind::Epsilon
-        }  
+            kind: SymbolKind::Epsilon,
+        }
     }
 }
 

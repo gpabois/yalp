@@ -1,4 +1,8 @@
-use std::{fmt::Display, hash::{Hash, Hasher}, ops::{Deref, DerefMut}};
+use std::{
+    fmt::Display,
+    hash::{Hash, Hasher},
+    ops::{Deref, DerefMut},
+};
 
 use itertools::Itertools;
 
@@ -6,17 +10,25 @@ use itertools::Itertools;
 #[derive(Debug)]
 pub struct Array<const N: usize, T> {
     pub cursor: usize,
-    pub data: [T; N]
+    pub data: [T; N],
 }
 
-impl<const N: usize, T> PartialEq for Array<N, T> where T: PartialEq {
+impl<const N: usize, T> PartialEq for Array<N, T>
+where
+    T: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
-        if self.len() != other.len() { return false; }
-        !self.iter().zip(other.iter()).any(|(a,b)| *a != *b)
+        if self.len() != other.len() {
+            return false;
+        }
+        !self.iter().zip(other.iter()).any(|(a, b)| *a != *b)
     }
 }
 
-impl<const N: usize, T> Hash for Array<N,T> where T: Hash {
+impl<const N: usize, T> Hash for Array<N, T>
+where
+    T: Hash,
+{
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.iter().for_each(|e| e.hash(state));
     }
@@ -24,20 +36,25 @@ impl<const N: usize, T> Hash for Array<N,T> where T: Hash {
 
 impl<const N: usize, T> Eq for Array<N, T> where T: Eq {}
 
-impl<const N: usize, T> Clone for Array<N, T> where T: Clone {
+impl<const N: usize, T> Clone for Array<N, T>
+where
+    T: Clone,
+{
     fn clone(&self) -> Self {
         self.iter().cloned().collect()
     }
 }
 
-impl<const N: usize, T>  std::fmt::Display for Array<N, T> where T: Display {
+impl<const N: usize, T> std::fmt::Display for Array<N, T>
+where
+    T: Display,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if N > 1 {
             write!(f, "({})", self.iter().map(ToString::to_string).join(", "))
         } else {
             write!(f, "{}", self.iter().map(ToString::to_string).join(", "))
         }
-
     }
 }
 
@@ -57,14 +74,14 @@ impl<const N: usize, T> FromIterator<T> for Array<N, T> {
     }
 }
 
-impl<const N: usize, T> Default for Array<N,T> {
+impl<const N: usize, T> Default for Array<N, T> {
     fn default() -> Self {
-        Self { 
-            cursor: 0, 
-            data: unsafe { std::mem::zeroed() }
+        Self {
+            cursor: 0,
+            data: unsafe { std::mem::zeroed() },
         }
     }
-} 
+}
 
 impl<const N: usize, T> Deref for Array<N, T> {
     type Target = [T];
@@ -80,7 +97,7 @@ impl<const N: usize, T> DerefMut for Array<N, T> {
     }
 }
 
-impl<const N: usize, T> Array<N,T> {
+impl<const N: usize, T> Array<N, T> {
     /// Push a new element in the array
     /// # Panics
     /// This method panics if the array is full.
@@ -89,7 +106,7 @@ impl<const N: usize, T> Array<N,T> {
             panic!("fixed-size array is full");
         }
         self.data[self.cursor] = value;
-        self.cursor +=1;
+        self.cursor += 1;
     }
 
     /// The current length of the array
@@ -100,12 +117,12 @@ impl<const N: usize, T> Array<N,T> {
 
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        return self.len() == 0
+        self.len() == 0
     }
-    
+
     #[inline(always)]
     pub fn is_full(&self) -> bool {
-        return self.len() == N
+        self.len() == N
     }
 }
 
@@ -118,8 +135,9 @@ mod tests {
         let array: Array<3, i32> = [1, 2, 3, 4, 5].into_iter().collect();
 
         let values: Vec<i32> = array.iter().cloned().collect();
-        let expected_values = vec![1,2,3];
+        let expected_values = vec![1, 2, 3];
 
         assert_eq!(values, expected_values);
     }
 }
+

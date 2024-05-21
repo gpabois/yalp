@@ -45,7 +45,13 @@ pub struct Rule<'sid, 'sym> {
 
 impl std::fmt::Display for Rule<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}. {} -> {}", self.id, self.lhs, self.rhs.iter().map(|s| s.to_string()).join(" "))
+        write!(
+            f,
+            "{}. {} -> {}",
+            self.id,
+            self.lhs,
+            self.rhs.iter().map(|s| s.to_string()).join(" ")
+        )
     }
 }
 
@@ -88,6 +94,10 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
         self.iter().find(|rule| rule.id == id).unwrap()
     }
 
+    pub fn start(&self) -> &'sym Symbol<'sid> {
+        self.1.start()
+    }
+
     pub fn eos(&self) -> &'sym Symbol<'sid> {
         self.1.eos()
     }
@@ -95,6 +105,5 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
     pub fn epsilon(&self) -> &'sym Symbol<'sid> {
         self.1.epsilon()
     }
-
-
 }
+
