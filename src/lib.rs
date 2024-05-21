@@ -17,6 +17,34 @@ pub use symbol::*;
 pub mod fixtures {
     use crate::{Grammar, GrammarResult};
 
+    /// A real-life grammar.
+    pub fn css_selector_grammar() -> GrammarResult<'static, Grammar<'static>> {
+        let mut grammar = Grammar::default();
+
+        grammar
+            .add_non_terminal_symbol("<selector-list>")?
+            .add_non_terminal_symbol("<complex-selector-list>")?
+            .add_non_terminal_symbol("<complex-selector>")?
+            .add_non_terminal_symbol("<compound-selector>")?
+            .add_non_terminal_symbol("<combinator>")?
+            .add_non_terminal_symbol("<type-selector>")?
+            .add_non_terminal_symbol("<subclass-selector>")?
+            .add_non_terminal_symbol("<pseudo-element-selector>")?
+            .add_non_terminal_symbol("<pseudo-class-selector>")?
+            .add_non_terminal_symbol("<wq-name>")?
+            .add_non_terminal_symbol("<ns-prefix>")?
+            
+            .add_terminal_symbol("*")?
+            .add_terminal_symbol("<ident-token>")?
+            .add_terminal_symbol(">")?
+            .add_terminal_symbol("+")?
+            .add_terminal_symbol("~")?
+            .add_terminal_symbol("|")?;
+
+
+        Ok(grammar)
+    }
+
     pub fn fixture_lr1_grammar() -> GrammarResult<'static, Grammar<'static>> {
         let mut grammar = Grammar::default();
 
