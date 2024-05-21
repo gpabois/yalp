@@ -104,11 +104,8 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
     /// # Panics
     /// Panics if there are no start rule (#0), or the start rule is empty.
     pub fn start_item_set<'rule, const K: usize>(&'rule self) -> ItemSet<'sid, 'sym, 'rule, K> {
-        let mut start = self
-            .get(0)
-            .at::<K>(0)
-            .unwrap();
-        
+        let mut start = self.get(0).at::<K>(0).unwrap();
+
         if K > 0 {
             start.lookaheads = Array::from_iter([self.eos()]);
         }
@@ -146,7 +143,7 @@ impl<const K: usize> std::fmt::Display for Item<'_, '_, '_, K> {
                 s
             })
             .join(" ");
-        
+
         if self.is_exhausted() {
             rhs.push_str(" •")
         }
@@ -214,7 +211,7 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
     pub fn is_symbol_non_terminal(&self) -> bool {
         self.symbol()
             .map(|symbol| !symbol.is_terminal())
-            .unwrap_or(false)    
+            .unwrap_or(false)
     }
     /// The item is reaching immediately a terminal symbol
     pub fn is_symbol_terminal(&self) -> bool {
@@ -236,7 +233,10 @@ impl<'sid, 'sym, 'rule, const K: usize> Item<'sid, 'sym, 'rule, K> {
     /// # Example
     /// (A -> • w eof).next() -> (A -> w • eof)
     pub fn next(&self) -> Option<Self> {
-        Self::new(self.rule, self.position + 1)
+        Self::new(self.rule, self.position + 1).map(|mut item| {
+            item.lookaheads = self.lookaheads.clone();
+            item
+        })
     }
 }
 
@@ -364,22 +364,26 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
     /// Iterable over all reachable sets from the current set.
     ///
     /// The transition returns the symbol, and the kernel.
-    pub fn reachable_sets(&self, rules: &'rule RuleSet<'sid, 'sym>) -> Vec<(&'sym Symbol<'sid>, ItemSet<'sid, 'sym, 'rule, K>)> {
+    pub fn reachable_sets(
+        &self,
+        rules: &'rule RuleSet<'sid, 'sym>,
+    ) -> Vec<(&'sym Symbol<'sid>, ItemSet<'sid, 'sym, 'rule, K>)> {
         rules
             .iter_symbols()
             .filter(|sym| !(sym.is_eos() || sym.is_epsilon()))
-            .map(|sym| (
-                sym, 
-                ItemSet::from_iter(
-                    self.iter()
-                        .filter(|item| item.symbol() == Some(sym))
-                        .cloned()
+            .map(|sym| {
+                (
+                    sym,
+                    ItemSet::from_iter(
+                        self.iter()
+                            .filter(|item| item.symbol() == Some(sym))
+                            .cloned(),
+                    ),
                 )
-            ))
+            })
             .map(|(sym, set)| (sym, set.next()))
             .filter(|(_, set)| !set.kernel.is_empty())
             .collect()
-
     }
 
     /// This methods is the union of all follow sets of all items which is followed by the given symbol.
@@ -398,7 +402,7 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
     }
 
     /// Add lookaheads to the items.  
-    /// 
+    ///
     /// TODO : Can be improved with cached follow sets.
     pub fn add_lookaheads(&mut self, rules: &'rule RuleSet<'sid, 'sym>) {
         let mut items = Vec::<Item<'sid, 'sym, 'rule, K>>::default();
@@ -437,7 +441,6 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

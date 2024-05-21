@@ -1,15 +1,13 @@
 pub mod grammar;
+pub mod item;
 pub mod lr;
 pub mod rule;
 pub mod symbol;
-pub mod item;
-pub mod lookahead;
 
 mod array;
 
+pub use grammar::{Grammar, GrammarError, GrammarResult};
 pub use item::*;
-pub use lookahead::*;
-pub use grammar::{Grammar, GrammarResult, GrammarError};
 pub use rule::*;
 pub use symbol::*;
 
@@ -33,14 +31,12 @@ pub mod fixtures {
             .add_non_terminal_symbol("<pseudo-class-selector>")?
             .add_non_terminal_symbol("<wq-name>")?
             .add_non_terminal_symbol("<ns-prefix>")?
-            
             .add_terminal_symbol("*")?
             .add_terminal_symbol("<ident-token>")?
             .add_terminal_symbol(">")?
             .add_terminal_symbol("+")?
             .add_terminal_symbol("~")?
             .add_terminal_symbol("|")?;
-
 
         Ok(grammar)
     }

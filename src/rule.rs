@@ -78,8 +78,10 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
         Self(grammar.iter_rules().collect(), grammar)
     }
 
-    pub fn iter_symbols(&self)-> impl Iterator<Item = &'sym Symbol<'sid>> {
-        self.1.iter_terminal_symbols().chain(self.1.iter_non_terminal_symbols())
+    pub fn iter_symbols(&self) -> impl Iterator<Item = &'sym Symbol<'sid>> {
+        self.1
+            .iter_terminal_symbols()
+            .chain(self.1.iter_non_terminal_symbols())
     }
 
     /// Iterate over all rules of the grammar
@@ -110,4 +112,3 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
         self.1.epsilon()
     }
 }
-
