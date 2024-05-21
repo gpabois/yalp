@@ -44,8 +44,8 @@ pub mod fixtures {
         grammar
             .add_terminal_symbol("0")?
             .add_terminal_symbol("1")?
-            .add_terminal_symbol("+")?
             .add_terminal_symbol("*")?
+            .add_terminal_symbol("+")?
             .add_non_terminal_symbol("E")?
             .add_non_terminal_symbol("B")?;
 

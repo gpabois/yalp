@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use super::{LrParserError, LrResult};
 use crate::{ItemSet, ItemSetId, RuleSet, Symbol};
 
@@ -49,19 +51,21 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
     }
 
     pub fn build(&mut self) -> LrResult<'sid, 'sym, ()> {
-        let mut stack = vec![0];
+        let mut stack = VecDeque::from_iter([0]);
         let rules = self.rules;
 
-        while let Some(set_id) = stack.pop() {
+        while let Some(set_id) = stack.pop_front() {
             self
                 .get_mut(set_id)
                 .ok_or(LrParserError::MissingSet(set_id))?
                 .close(rules);
+            
+            println!("{}", self.get(set_id).unwrap());
 
             for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingSet(set_id))?.reachable_sets(rules) {
                 let to_id = if !self.contains(&kernel) {
                     let id = self.push(kernel);
-                    stack.push(id);
+                    stack.push_back(id);
                     id
                 } else {
                     self.get_id(&kernel).unwrap()

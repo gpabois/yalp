@@ -90,7 +90,7 @@ impl<'sym, 'sid> Row<'sym, 'sid>
                 .filter(|(sym, _)| !sym.is_eos())
                 .filter(|(sym, _)| !sym.is_epsilon())
                 .inspect(|(sym, set)| {
-                    println!("{} - {} -> {}", transition.from, sym, set);
+                    println!("{} - {} -> {}", transition.from.id, sym, set.id);
                 })
                 .map(|(sym, set)| (*sym, Action::Shift(set.id))) {
 
@@ -211,7 +211,6 @@ impl<'sym, 'sid> Table<'sym, 'sid> {
             grammar,
             rows: graph
                 .iter_transitions()
-                .into_iter()
                 .map(|t| Row::from_transition(t, grammar))
                 .collect::<LrResult<'sym, 'sid, Vec<_>>>()?,
         })

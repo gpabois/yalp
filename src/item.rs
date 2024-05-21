@@ -151,10 +151,12 @@ impl<const K: usize> std::fmt::Display for Item<'_, '_, '_, K> {
             rhs.push_str(" •")
         }
 
-        write!(f, "{}. {} -> {}", self.rule.id, self.rule.lhs, rhs)?;
+        write!(f, "[({}) {} -> {}", self.rule.id, self.rule.lhs, rhs)?;
 
         if !self.lookaheads.is_empty() {
-            write!(f, ", {}", self.lookaheads)?;
+            write!(f, ", {}]", self.lookaheads)?;
+        } else {
+            write!(f, "]")?;
         }
 
         Ok(())
@@ -253,9 +255,7 @@ pub struct ItemSet<'sid, 'sym, 'rule, const K: usize> {
 impl<'sid, 'sym, 'rule, const K: usize> std::fmt::Display for ItemSet<'sid, 'sym, 'rule, K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "#{}{{", self.id)?;
-        for item in self.iter() {
-            write!(f, "{},", item)?;
-        }
+        write!(f, "{}", self.iter().map(ToString::to_string).join(", "))?;
         write!(f, "}}")
     }
 }
