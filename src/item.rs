@@ -377,6 +377,7 @@ impl<'sid, 'sym, 'rule, const K: usize> ItemSet<'sid, 'sym, 'rule, K> {
                 )
             ))
             .map(|(sym, set)| (sym, set.next()))
+            .filter(|(_, set)| !set.kernel.is_empty())
             .collect()
 
     }

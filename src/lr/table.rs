@@ -89,6 +89,9 @@ impl<'sym, 'sid> Row<'sym, 'sid>
                 .filter(|(sym, _)| sym.is_terminal())
                 .filter(|(sym, _)| !sym.is_eos())
                 .filter(|(sym, _)| !sym.is_epsilon())
+                .inspect(|(sym, set)| {
+                    println!("{} - {} -> {}", transition.from, sym, set);
+                })
                 .map(|(sym, set)| (*sym, Action::Shift(set.id))) {
 
                 // Shift/reduce conflict
@@ -125,7 +128,7 @@ impl<'sym, 'sid> Row<'sym, 'sid>
                     .map(|sym| (sym, Action::Reduce(rule_id)))
                 );
             } 
-            
+
             Ok(Self::new(actions, goto))
     }
     pub fn from_transition<const K: usize>(
