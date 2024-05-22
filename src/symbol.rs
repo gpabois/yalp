@@ -2,20 +2,43 @@ use std::hash::Hash;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum SymbolKind {
-    Normal,
+    Terminal,
+    NonTerminal,
     EOS,
     Start,
     Epsilon,
 }
+
+/// The identifier of a symbol.
+pub struct SymbolId(str);
 
 /// Defines a symbol
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Symbol<'s> {
     /// *Unique* identifier of the symbol
     pub id: &'s str,
-    /// Set the symbol as terminal
-    terminal: bool,
     kind: SymbolKind,
+}
+
+#[macro_export]
+macro_rules! nterm {
+    ($kind:expr) => {
+        Symbol::new($kind, true)
+    };
+}
+
+#[macro_export]
+macro_rules! term {
+    ($kind:expr) => {
+        Symbol::new($kind, true)
+    };
+}
+
+#[macro_export]
+macro_rules! start {
+    () => {
+        Symbol::start()
+    };
 }
 
 impl std::fmt::Display for Symbol<'_> {
@@ -29,14 +52,13 @@ impl<'s> Symbol<'s> {
     pub fn new(id: &'s str, terminal: bool) -> Self {
         Self {
             id,
-            terminal,
-            kind: SymbolKind::Normal,
+            kind: if terminal {SymbolKind::Terminal} else {SymbolKind::NonTerminal},
         }
     }
 
     #[inline(always)]
     pub fn is_terminal(&self) -> bool {
-        self.terminal
+        matches!(self.kind, SymbolKind::EOS | SymbolKind::Epsilon | SymbolKind::Terminal)
     }
 
     #[inline(always)]
@@ -54,11 +76,10 @@ impl<'s> Symbol<'s> {
         matches!(self.kind, SymbolKind::Epsilon)
     }
 
-    /// Creates and end-of-stream token ($)
+    /// Creates and end-of-stream token ($, or <eos>)
     pub fn eos() -> Self {
         Self {
             id: "<eos>",
-            terminal: true,
             kind: SymbolKind::EOS,
         }
     }
@@ -67,7 +88,6 @@ impl<'s> Symbol<'s> {
     pub fn start() -> Self {
         Self {
             id: "<start>",
-            terminal: false,
             kind: SymbolKind::Start,
         }
     }
@@ -78,7 +98,6 @@ impl<'s> Symbol<'s> {
     pub fn epsilon() -> Self {
         Self {
             id: "<eps>",
-            terminal: true,
             kind: SymbolKind::Epsilon,
         }
     }

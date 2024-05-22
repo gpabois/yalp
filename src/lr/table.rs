@@ -22,9 +22,17 @@ impl<'sid, 'sym> Row<'sid, 'sym> {
             goto: goto.into_iter().collect(),
         }
     }
+
+    pub fn action(&self, symbol: &'sym Symbol<'sid>) -> Option<&Action> {
+        self.actions.get(symbol)
+    }
+
+    pub fn goto(&self, symbol: &'sym Symbol<'sid>) -> Option<ItemSetId> {
+        self.goto.get(symbol).copied()
+    }
 }
 
-impl<'sym, 'sid> Row<'sym, 'sid> {
+impl<'sid, 'sym> Row<'sid, 'sym> {
     fn from_transition_lr1<const K: usize>(
         transition: Transition<'sid, 'sym, '_, '_, K>,
         grammar: &'sym Grammar<'sid>,
@@ -141,7 +149,7 @@ impl<'sym, 'sid> Row<'sym, 'sid> {
 }
 
 #[derive(PartialEq)]
-pub struct Table<'sym, 'sid> {
+pub struct Table<'sid, 'sym> {
     grammar: &'sym Grammar<'sid>,
     rows: Vec<Row<'sym, 'sid>>,
 }
@@ -164,7 +172,7 @@ impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
                     self.grammar
                         .iter_terminal_symbols()
                         .chain(self.grammar.iter_non_terminal_symbols())
-                        .map(|sym| sym.id.as_ref()),
+                        .map(|sym| sym.id),
                 )
                 .collect(),
         );
@@ -193,7 +201,7 @@ impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
     }
 }
 
-impl<'sym, 'sid> Table<'sym, 'sid> {
+impl<'sid, 'sym> Table<'sid, 'sym> {
     pub fn new<I>(grammar: &'sym Grammar<'sid>, rows: I) -> Self
     where
         I: IntoIterator<Item = Row<'sym, 'sid>>,
@@ -206,6 +214,10 @@ impl<'sym, 'sid> Table<'sym, 'sid> {
 
     fn iter(&self) -> impl Iterator<Item = &Row<'sym, 'sid>> {
         self.rows.iter()
+    }
+
+    pub fn get(&self, state_id: usize) -> Option<&Row<'sid, 'sym>> {
+        self.rows.get(state_id)
     }
 
     fn from_graph<const K: usize>(

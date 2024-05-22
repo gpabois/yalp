@@ -3,63 +3,67 @@ pub mod item;
 pub mod lr;
 pub mod rule;
 pub mod symbol;
-
-mod array;
+pub mod token;
+pub mod lexer;
+pub mod parser;
+pub mod ast;
 
 pub use grammar::{Grammar, GrammarError, GrammarResult};
 pub use item::*;
 pub use rule::*;
 pub use symbol::*;
 
+mod array;
+
 #[cfg(test)]
 pub mod fixtures {
-    use crate::{Grammar, GrammarResult};
+    use crate::{nterm, rule, term, Grammar, GrammarResult};
 
     /// A real-life grammar.
-    pub fn css_selector_grammar() -> GrammarResult<'static, Grammar<'static>> {
-        let mut grammar = Grammar::default();
-
-        grammar
-            .add_non_terminal_symbol("<selector-list>")?
-            .add_non_terminal_symbol("<complex-selector-list>")?
-            .add_non_terminal_symbol("<complex-selector>")?
-            .add_non_terminal_symbol("<compound-selector>")?
-            .add_non_terminal_symbol("<combinator>")?
-            .add_non_terminal_symbol("<type-selector>")?
-            .add_non_terminal_symbol("<subclass-selector>")?
-            .add_non_terminal_symbol("<pseudo-element-selector>")?
-            .add_non_terminal_symbol("<pseudo-class-selector>")?
-            .add_non_terminal_symbol("<wq-name>")?
-            .add_non_terminal_symbol("<ns-prefix>")?
-            .add_terminal_symbol("*")?
-            .add_terminal_symbol("<ident-token>")?
-            .add_terminal_symbol(">")?
-            .add_terminal_symbol("+")?
-            .add_terminal_symbol("~")?
-            .add_terminal_symbol("|")?;
+    pub fn css_selector_grammar() -> GrammarResult<'static, Grammar<'static, 0, 17>> {
+        let mut grammar = Grammar::new(
+            [
+                nterm!("<selector-list>"),
+                nterm!("<complex-selector-list>"),
+                nterm!("<complex-selector>"),
+                nterm!("<compound-selector>"),
+                nterm!("<combinator>"),
+                nterm!("<type-selector>"),
+                nterm!("<subclass-selector>"),
+                nterm!("<pseudo-element-selector>"),
+                nterm!("<pseudo-class-selector>"),
+                nterm!("<wq-name>"),
+                nterm!("<ns-prefix>"),
+                term!("*"),
+                term!("<ident-token>"),
+                term!(">"),
+                term!("+"),
+                term!("~"),
+                term!("|")
+            ],
+            []
+        );
 
         Ok(grammar)
     }
 
-    pub fn fixture_lr1_grammar() -> GrammarResult<'static, Grammar<'static>> {
-        let mut grammar = Grammar::default();
-
-        grammar
-            .add_terminal_symbol("(")?
-            .add_terminal_symbol(")")?
-            .add_terminal_symbol("n")?
-            .add_terminal_symbol("+")?
-            .add_non_terminal_symbol("E")?
-            .add_non_terminal_symbol("T")?;
-
-        grammar
-            .add_rule("<start>", ["E", "<eos>"])?
-            .add_rule("E", ["T"])?
-            .add_rule("E", ["(", "E", ")"])?
-            .add_rule("T", ["n"])?
-            .add_rule("T", ["+", "T"])?
-            .add_rule("T", ["T", "+", "n"])?;
-
+    pub fn fixture_lr1_grammar() -> GrammarResult<'static, Grammar<'static, 6, 6>> {
+        let mut grammar = Grammar::new([
+            term!("("),
+            term!(")"),
+            term!("n"),
+            term!("+"),
+            nterm!("E"),
+            nterm!("T")
+        ], [
+            rule!("<start>" => ["E", "<eos>"]),
+            rule!("E" => ["T"]),
+            rule!("E" => ["(", "E", ")"]),
+            rule!("T" => ["n"]),
+            rule!("T" => ["+", "T"]),
+            rule!("T" => ["T", "+", "n"])
+        ]);
+        
         Ok(grammar)
     }
     pub fn fixture_lr0_grammar() -> GrammarResult<'static, Grammar<'static>> {

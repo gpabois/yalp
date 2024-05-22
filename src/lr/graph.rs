@@ -57,12 +57,12 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
         while let Some(set_id) = stack.pop_front() {
             self
                 .get_mut(set_id)
-                .ok_or(LrParserError::MissingSet(set_id))?
+                .ok_or(LrParserError::MissingState(set_id))?
                 .close(rules);
             
             println!("{}", self.get(set_id).unwrap());
 
-            for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingSet(set_id))?.reachable_sets(rules) {
+            for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingState(set_id))?.reachable_sets(rules) {
                 let to_id = if !self.contains(&kernel) {
                     let id = self.push(kernel);
                     stack.push_back(id);

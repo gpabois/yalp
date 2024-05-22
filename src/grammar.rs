@@ -52,21 +52,19 @@ pub type GrammarResult<'s, T> = Result<T, GrammarError<'s>>;
 ///     .add_non_terminal_symbol("E")?
 ///     .add_non_terminal_symbol("B")?;
 /// ```
-pub struct Grammar<'sid> {
-    rules: Vec<RuleDef<'sid>>,
-    symbols: Vec<Symbol<'sid>>,
+pub struct Grammar<'sid, const R: usize, const S: usize> {
+    rules: [RuleDef<'sid>; R],
+    symbols: [Symbol<'sid>; S]
 }
 
-impl Default for Grammar<'_> {
-    fn default() -> Self {
-        Self {
-            rules: Default::default(),
-            symbols: vec![Symbol::start(), Symbol::eos(), Symbol::epsilon()],
-        }
+impl <'sid, const R: usize, const S: usize> Grammar<'sid, R, S> {
+    pub fn new(symbols: [Symbol<'sid>; S], rules: [RuleDef<'sid>; R]) -> Self {
+        Self{rules, symbols}
     }
 }
 
-impl<'sid> Grammar<'sid> {
+
+impl<'sid, const R: usize, const S: usize> Grammar<'sid, R, S> {
     /// Returns the end-of-stream symbol (<eos>) of the grammar.
     pub fn eos(&self) -> &Symbol<'sid> {
         self.symbols.iter().find(|s| s.is_eos()).unwrap()
@@ -77,6 +75,7 @@ impl<'sid> Grammar<'sid> {
         self.symbols.iter().find(|s| s.is_start()).unwrap()
     }
 
+    /// Returns the epsilon symbol (<eps>) of the grammar.
     pub fn epsilon(&self) -> &Symbol<'sid> {
         self.symbols.iter().find(|s| s.is_epsilon()).unwrap()
     }
@@ -162,7 +161,7 @@ impl<'sid> Grammar<'sid> {
     }
 }
 
-impl<'sid> Grammar<'sid> {
+impl<'sid, const R: usize, const S: usize> Grammar<'sid, R, S> {
     #[inline(always)]
     fn borrow_rule(&self, def: &RuleDef<'sid>) -> Rule<'sid, '_> {
         Rule {

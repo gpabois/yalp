@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{hash::Hash, vec::Drain};
 
 use itertools::Itertools;
 
@@ -6,37 +6,22 @@ use crate::Grammar;
 
 use super::Symbol;
 
+/// The rule's identifier in the grammar.
 pub type RuleId = usize;
 
-/// Defines a grammar rule
-///
-/// X := A1..An
-#[derive(Debug, PartialEq)]
-pub(crate) struct RuleDef<'sid> {
-    /// Identifier of the rule
-    pub id: RuleId,
-    pub lhs: &'sid str,
-    pub rhs: Vec<&'sid str>,
-}
+pub type AstIter<'a, Ast> = Drain<'a, Ast>;
 
-impl<'sid> RuleDef<'sid> {
-    pub fn new<I>(id: RuleId, lhs: &'sid str, rhs: I) -> Self
-    where
-        I: IntoIterator<Item = &'sid str>,
-    {
-        Self {
-            id,
-            lhs,
-            rhs: rhs.into_iter().collect(),
-        }
-    }
-}
+/// A rule reducer
+pub type RuleReducer<'b, Ast> = for <'a, 'c, 'd> fn(&'a Rule<'b, 'c>, AstIter<'d, Ast>) -> Ast;
 
 #[derive(Debug, Eq, PartialEq)]
 /// A grammar rule
 ///
+/// This object is produced by the grammar with
+/// references to the symbols.
+/// 
 /// # Example
-/// A -> w eof
+/// A -> w <eos>
 pub struct Rule<'sid, 'sym> {
     pub id: RuleId,
     pub lhs: &'sym Symbol<'sid>,
@@ -47,7 +32,7 @@ impl std::fmt::Display for Rule<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}. {} -> {}",
+            "({}) {} => {}",
             self.id,
             self.lhs,
             self.rhs.iter().map(|s| s.to_string()).join(" ")
@@ -63,6 +48,7 @@ impl Hash for Rule<'_, '_> {
 }
 
 impl<'sid, 'sym> Rule<'sid, 'sym> {
+    /// Check the rules contains a certain symbol in its RHS. 
     #[inline(always)]
     pub fn contains(&self, sym: &'sym Symbol<'sid>) -> bool {
         self.rhs.contains(&sym)
@@ -70,6 +56,8 @@ impl<'sid, 'sym> Rule<'sid, 'sym> {
 }
 
 /// A set of rules.
+/// 
+/// This object is used to generate parser tables.
 #[derive(Debug)]
 pub struct RuleSet<'sid, 'sym>(Vec<Rule<'sid, 'sym>>, &'sym Grammar<'sid>);
 
@@ -100,6 +88,10 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
         self.iter().find(|rule| rule.id == id).unwrap()
     }
 
+    pub fn get_symbol_by_id(&self, symbol_id: &str) -> Option<&'sym Symbol<'sid>> {
+        self.1.try_get_symbol(symbol_id)
+    }
+
     pub fn start(&self) -> &'sym Symbol<'sid> {
         self.1.start()
     }
@@ -110,5 +102,40 @@ impl<'sid, 'sym> RuleSet<'sid, 'sym> {
 
     pub fn epsilon(&self) -> &'sym Symbol<'sid> {
         self.1.epsilon()
+    }
+}
+
+
+/// Defines a grammar rule
+///
+/// This method is internal to the grammar object.
+/// The grammar will generate the Rule object with references to reduce
+/// the in-memory print.
+/// X := A1..An
+#[derive(Debug, PartialEq)]
+pub(crate) struct RuleDef<'sid> {
+    /// Identifier of the rule
+    pub id: RuleId,
+    pub lhs: &'sid str,
+    pub rhs: Vec<&'sid str>,
+}
+
+#[macro_export]
+macro_rules! rule {
+    ($lhs:expr => $rhs:expr) => {
+        RuleDef::new(0, $lhs, $rhs)
+    };
+}
+
+impl<'sid> RuleDef<'sid> {
+    pub fn new<I>(id: RuleId, lhs: &'sid str, rhs: I) -> Self
+    where
+        I: IntoIterator<Item = &'sid str>,
+    {
+        Self {
+            id,
+            lhs,
+            rhs: rhs.into_iter().collect(),
+        }
     }
 }
