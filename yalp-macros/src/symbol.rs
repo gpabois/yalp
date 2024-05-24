@@ -1,0 +1,213 @@
+use proc_macro2::{Ident, Literal, TokenStream};
+use lazy_static::lazy_static;
+
+use yalp::{lr::LrTable, traits::{Ast as _, Parser as _, Token as _}, AstIter, LrParser, LrParserError, Rule, RuleReducer, EOS, START};
+use crate::{Token, Lexer, Error};
+
+#[derive(Debug, Default)]
+pub struct SymbolIdentSet(Vec<String>);
+
+const GRAMMAR: yalp::Grammar<'static, 12, 7> = yalp::Grammar::new([
+        yalp::Symbol::start(),
+        yalp::Symbol::eos(),
+        yalp::Symbol::epsilon(),
+        yalp::Symbol::term("<"),
+        yalp::Symbol::term(">"),
+        yalp::Symbol::term(","),
+        yalp::Symbol::term("-"),
+        yalp::Symbol::term("<ident>"),
+        yalp::Symbol::term("<lit>"),
+        yalp::Symbol::nterm("<symbol-ident-set>"),
+        yalp::Symbol::nterm("<symbol-ident>"),
+        yalp::Symbol::nterm("<ident-chain>"),
+    ], [
+        yalp::RuleDef::new(START, &["<symbol-ident-set>", EOS]),
+        yalp::RuleDef::new("<symbol-ident-set>", &["<symbol-ident-set>", ",", "<symbol-ident>"]),
+        yalp::RuleDef::new("<symbol-ident>", &["<ident-chain>"]),
+        yalp::RuleDef::new("<symbol-ident>", &["<lit>"]),
+        yalp::RuleDef::new("<symbol-ident>", &["<", "<ident-chain>", ">"]),
+        yalp::RuleDef::new("<ident-chain>", &["<ident-chain>", "-", "<ident>"]),
+        yalp::RuleDef::new("<ident-chain>", &["<ident>"]),
+]);
+
+lazy_static! {
+    static ref TABLE: Result<LrTable<'static, 'static>, LrParserError<'static, 'static>> = LrTable::build::<0, _>(&GRAMMAR);
+}
+
+struct SymbolIdent(String);
+
+struct IdentChain(String);
+
+enum Ast {
+    Token(Token),
+    IdentChain(IdentChain),
+    SymbolIdent(SymbolIdent),
+    SymbolIdentSet(SymbolIdentSet)
+}
+
+impl TryFrom<Ast> for SymbolIdentSet {
+    type Error = Error;
+
+    fn try_from(value: Ast) -> Result<Self, Self::Error> {
+        match value {
+            Ast::SymbolIdentSet(set) => Ok(set),
+            _ => Err(Error::wrong_symbol("<symbol-ident-set>", value.symbol_id())),
+        }
+    }
+}
+
+impl TryFrom<Ast> for SymbolIdent {
+    type Error = Error;
+
+    fn try_from(value: Ast) -> Result<Self, Self::Error> {
+        match value {
+            Ast::SymbolIdent(chain) => Ok(chain),
+            _ => Err(Error::wrong_symbol("<symbol-ident>", value.symbol_id())),
+        }
+    }
+}
+
+impl TryFrom<Ast> for IdentChain {
+    type Error = Error;
+
+    fn try_from(value: Ast) -> Result<Self, Self::Error> {
+        match value {
+            Ast::IdentChain(chain) => Ok(chain),
+            _ => Err(Error::wrong_symbol("<ident-chain>", value.symbol_id())),
+        }
+    }
+}
+
+impl TryFrom<Ast> for Token {
+    type Error = Error;
+
+    fn try_from(value: Ast) -> Result<Self, Self::Error> {
+        match value {
+            Ast::Token(tok) => Ok(tok),
+            _ => Err(Error::wrong_symbol("<ident-chain>", value.symbol_id())),
+        }
+    }
+}
+
+impl TryFrom<Ast> for Ident {
+    type Error = Error;
+
+    fn try_from(value: Ast) -> Result<Self, Self::Error> {
+        let tok: Token = value.try_into()?;
+        tok.try_into()
+    }
+}
+
+impl TryFrom<Ast> for Literal {
+    type Error = Error;
+
+    fn try_from(value: Ast) -> Result<Self, Self::Error> {
+        let tok: Token = value.try_into()?;
+        tok.try_into()
+    }
+}
+
+
+impl yalp::traits::Ast for Ast {
+    fn symbol_id(&self) -> &str {
+        match self {
+            Ast::Token(tok) => tok.symbol_id(),
+            Ast::IdentChain(_) => "<ident-chain>",
+            Ast::SymbolIdent(_) => "<symbol-ident>",
+            Ast::SymbolIdentSet(_) => "<symbol-ident-set>",
+        }
+    }
+}
+
+impl From<Token> for Ast {
+    fn from(value: Token) -> Self {
+        Self::Token(value)
+    }
+}
+
+///////////////////
+// Rule reducers //
+///////////////////
+
+/// 1. START => <symbol-set-1> EOS
+fn parse_1(_: &Rule<'static, '_>, mut lhs:  AstIter<Ast>) -> Result<Ast, Error> {
+    Ok(lhs.next().unwrap())
+}
+
+/// 2. <symbol-ident-set> => <symbol-ident-set>" , <symbol-ident>
+fn parse_2(_: &Rule<'static, '_>, mut lhs:  AstIter<Ast>) -> Result<Ast, Error> {
+    let mut set: SymbolIdentSet = lhs.next().unwrap().try_into()?; 
+    lhs.next();
+    let ident: SymbolIdent = lhs.next().unwrap().try_into()?;
+
+    set.0.push(ident.0);
+
+    Ok(Ast::SymbolIdentSet(set))
+}
+
+/// 3. <symbol-ident> => <ident-chain>
+fn parse_3(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
+    let chain: IdentChain = lhs.next().unwrap().try_into()?;
+    Ok(Ast::SymbolIdent(SymbolIdent(chain.0)))
+}
+
+/// 4. <symbol-ident> <lit>
+fn parse_4(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
+    let lit: Literal = lhs.next().unwrap().try_into()?;
+    Ok(Ast::SymbolIdent(SymbolIdent(lit.to_string())))
+}
+
+/// 5. <symbol-ident> => < <ident-chain> >
+fn parse_5(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
+    let chain: IdentChain = lhs.next().unwrap().try_into()?;
+    Ok(Ast::SymbolIdent(SymbolIdent(format!("<{}>", chain.0))))
+}
+
+/// 6. <ident-chain> => <ident-chain> - <ident>
+fn parse_6(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
+    let mut chain: IdentChain = lhs.next().unwrap().try_into()?;
+    let mut lhs = lhs.skip(1);
+    
+    let ident: Ident = lhs.next().unwrap().try_into()?;
+    chain.0.push_str(&ident.to_string());
+
+    Ok(Ast::IdentChain(chain))
+}
+
+/// 7. <ident-chain> => <ident>
+fn parse_7(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
+    let ident: Ident = lhs.next().unwrap().try_into()?;
+    Ok(Ast::IdentChain(IdentChain(ident.to_string())))
+}
+
+const REDUCERS: &[RuleReducer<'static, Ast, Error>] = &[
+    parse_1,
+    parse_2,
+    parse_3,
+    parse_4,
+    parse_5,
+    parse_6,
+    parse_7
+];
+
+/// Parse a collection of symbol idents : <symbol-ident>, <symbol-ident> ...
+pub fn parse_symbol_ident_set(stream: TokenStream) -> Result<SymbolIdentSet, Error> {
+    if stream.is_empty() {
+        return Ok(SymbolIdentSet::default())
+    }
+
+    let mut lexer = Lexer::new(stream);
+    
+    let table = TABLE.as_ref().map_err(|err| err.clone())?;
+
+    let parser = LrParser::<Ast, _>::new(
+        &GRAMMAR, 
+        table, 
+        &REDUCERS
+    );
+
+
+    let ast = parser.parse(&mut lexer)?;
+
+    ast.try_into()
+}

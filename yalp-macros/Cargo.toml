@@ -7,6 +7,8 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
+yalp = { path="../yalp" }
 proc-macro2 = "1.0.83"
 quote = "1.0.36"
 syn = "2.0.65"
+lazy_static = "1.4.0"

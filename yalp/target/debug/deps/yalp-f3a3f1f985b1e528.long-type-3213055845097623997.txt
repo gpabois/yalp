@@ -1,1 +1,0 @@
-std::iter::Map<std::slice::Iter<'_, &str>, for<'a, 'b> fn(&'a Self, &'b str) -> &'a symbol::Symbol<'_> {<Self as grammar::traits::Grammar<'_>>::sym}>
