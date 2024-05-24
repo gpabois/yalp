@@ -1,7 +1,7 @@
-use crate::lexer::SourceLocation;
+use crate::lexer::Span;
 
 pub mod traits {
-    pub trait Token {
+    pub trait Token: Clone {
         fn symbol_id(&self) -> &str;
     }
 }
@@ -10,7 +10,7 @@ pub mod traits {
 pub struct Token<'kind> {
     pub kind: &'kind str,
     pub value: String,
-    pub location: SourceLocation
+    pub location: Span,
 }
 
 impl<'kind> traits::Token for Token<'kind> {
@@ -20,7 +20,15 @@ impl<'kind> traits::Token for Token<'kind> {
 }
 
 impl<'kind> Token<'kind> {
-    pub fn new<S>(kind: &'kind str, value: S, location: SourceLocation) -> Self where S: ToString {
-        Self {kind, value: value.to_string(), location}
+    pub fn new<S>(kind: &'kind str, value: S, location: Span) -> Self
+    where
+        S: ToString,
+    {
+        Self {
+            kind,
+            value: value.to_string(),
+            location,
+        }
     }
 }
+

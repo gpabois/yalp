@@ -13,52 +13,67 @@ pub use item::*;
 pub use rule::*;
 pub use symbol::*;
 
+pub use lr::{LrParser, LrParserError, LrTable};
+
+pub mod traits {
+    pub use crate::lexer::traits::Lexer;
+    pub use crate::parser::traits::{Ast, Parser};
+    pub use crate::symbol::traits::{IntoRef, SymbolSliceable};
+    pub use crate::token::traits::Token;
+}
+
 mod array;
 
 #[cfg(test)]
 pub mod fixtures {
-    use crate::{grammar, nterm, rule, sym, term, Grammar, EOS, START};
+    use crate::{Grammar, RuleDef, Symbol, EOS, START};
 
-    pub const FIXTURE_LR1_GRAMMAR: Grammar<'static, 9, 6> = grammar! {
-        symbols: [
-            term!(s"("),
-            term!(s")"),
-            term!(n),
-            term!(+),
-            nterm!(E),
-            nterm!(T)
+    pub const FIXTURE_LR1_GRAMMAR: Grammar<'static, 9, 6> = Grammar::new(
+        [
+            Symbol::start(),
+            Symbol::eos(),
+            Symbol::epsilon(),
+            Symbol::term("("),
+            Symbol::term(")"),
+            Symbol::term("n"),
+            Symbol::term("+"),
+            Symbol::nterm("E"),
+            Symbol::nterm("T"),
         ],
-        rules: [
-            rule!(START => sym!{E} EOS),
-            rule!(sym!{E} => sym!(T)),
-            rule!(sym!{E} => "(" sym!{E} ")"),
-            rule!(sym!{E} => sym!{n}),
-            rule!(sym!{T} => sym!{+} sym!{T}),
-            rule!(sym!{T} => sym!{T} sym!{+} sym!{n})
-        ]
-    };
+        [
+            RuleDef::new(START, &["E", EOS]),
+            RuleDef::new("E", &["(", "E", ")"]),
+            RuleDef::new("E", &["T"]),
+            RuleDef::new("T", &["n"]),
+            RuleDef::new("T", &["+", "T"]),
+            RuleDef::new("T", &["T", "+", "n"]),
+        ],
+    );
 
-    pub const FIXTURE_LR0_GRAMMAR: Grammar<'static, 9, 6> = grammar! {
-        symbols: [
-            term!(0),
-            term!(1),
-            term!(*),
-            term!(+),
-            nterm!(E),
-            nterm!(B)
+    pub const FIXTURE_LR0_GRAMMAR: Grammar<'static, 9, 6> = Grammar::new(
+        [
+            Symbol::start(),
+            Symbol::eos(),
+            Symbol::epsilon(),
+            Symbol::term("0"),
+            Symbol::term("1"),
+            Symbol::term("+"),
+            Symbol::term("*"),
+            Symbol::nterm("E"),
+            Symbol::nterm("B"),
         ],
-        rules: [
-            rule!(START => sym!(E) EOS),
-            rule!(sym!(E) => sym!(E) sym!(*) sym!(B)),
-            rule!(sym!(E) => sym!(E) sym!(+) sym!(B)),
-            rule!(sym!(E) => sym!(B)),
-            rule!(sym!(B) => sym!{0}),
-            rule!(sym!(B) => sym!(1))
-        ]
-    };
+        [
+            RuleDef::new(START, &["E", EOS]),
+            RuleDef::new("E", &["E", "*", "B"]),
+            RuleDef::new("E", &["E", "+", "B"]),
+            RuleDef::new("E", &["B"]),
+            RuleDef::new("B", &["0"]),
+            RuleDef::new("B", &["1"]),
+        ],
+    );
 
     #[test]
-    fn test_lr0_grammar() {
+    fn test_grammars() {
         println!("{:#?}", FIXTURE_LR1_GRAMMAR);
         println!("{:#?}", FIXTURE_LR0_GRAMMAR);
     }

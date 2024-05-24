@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 
 use crate::grammar::traits::Grammar;
-use crate::sym::traits::SymbolSliceable as _;
 use crate::token::traits::Token;
 use crate::traits::IntoRef;
+use crate::traits::SymbolSliceable as _;
 use crate::{
     lexer::{traits::Lexer, LexerError},
-    parser::{traits::Ast, Parser},
+    parser::{traits::Ast, traits::Parser},
     ItemSetId, RuleId, RuleReducer, RuleSet, Symbol,
 };
 
@@ -87,7 +87,7 @@ where
     Node: Ast,
 {
     rules: RuleSet<'sid, 'sym>,
-    table: &'table Table<'sid, 'sym>,
+    table: &'table LrTable<'sid, 'sym>,
     reducers: &'reducers [RuleReducer<'sid, Node>],
 }
 
@@ -97,7 +97,7 @@ where
 {
     pub fn new<G>(
         grammar: &'g G,
-        table: &'table Table<'sid, 'g>,
+        table: &'table LrTable<'sid, 'g>,
         reducers: &'reducers [RuleReducer<'sid, Node>],
     ) -> Self
     where
@@ -105,7 +105,13 @@ where
         &'g G: IntoRef<'g, [Symbol<'sid>]>,
     {
         if reducers.len() != grammar.iter_rules().count() {
-            panic!("the number of reducers must match the number of grammar rules.")
+            panic!(
+                "{}",
+                &format!(
+                    "the number of reducers must match the number of grammar rules {}.",
+                    &grammar.iter_rules().count().to_string()
+                )
+            )
         }
 
         Self {
@@ -127,16 +133,26 @@ where
     where
         Self::Ast: From<L::Token>,
     {
-        let mut state: ItemSetId = 0;
+        let mut states: Vec<ItemSetId> = vec![0];
         let mut stack: Vec<Node> = Vec::default();
 
-        while let Some(token_result) = lexer.next() {
-            let token = token_result?;
+        println!("{}", self.table);
 
-            let symbol = self
-                .rules
-                .get_symbol_by_id(token.symbol_id())
-                .ok_or_else(|| LrParserError::UnknownSymbol(token.symbol_id().to_string()))?;
+        let mut cursor = lexer.next();
+
+        loop {
+            let mut state = states.last().copied().unwrap();
+
+            let (symbol, tok) = match &cursor {
+                None => (self.rules.eos(), None),
+                Some(Ok(tok)) => (
+                    self.rules
+                        .get_symbol_by_id(tok.symbol_id())
+                        .ok_or_else(|| LrParserError::UnknownSymbol(tok.symbol_id().to_string()))?,
+                    Some(tok),
+                ),
+                Some(Err(err)) => return Err(LrParserError::LexerError(err.clone())),
+            };
 
             let row = self
                 .table
@@ -147,13 +163,18 @@ where
                 .action(symbol)
                 .ok_or(LrParserError::MissingAction(state, symbol))?;
 
+            println!("#{} {} :: {}", state, symbol, action);
             match action {
                 // Push the new terminal on top of the stack
                 // Shift to tne given state.
                 Action::Shift(next_state_id) => {
-                    stack.push(token.into());
-                    state = *next_state_id;
+                    if !symbol.is_eos() {
+                        stack.push(tok.cloned().unwrap().into());
+                        cursor = lexer.next();
+                    }
+                    states.push(*next_state_id);
                 }
+
                 // Reduce by the given rule
                 // Consume LHS's length number of symbols
                 Action::Reduce(rule_id) => {
@@ -161,7 +182,7 @@ where
                     let consume = rule.rhs.len();
 
                     let ast = {
-                        let drained = stack.drain(stack.len() - consume..);
+                        let drained = stack.drain(stack.len().saturating_sub(consume)..);
                         drained
                             .as_slice()
                             .iter()
@@ -177,6 +198,20 @@ where
                                 }
                             })?;
 
+                        states.truncate(states.len().saturating_sub(consume));
+                        state = states.last().copied().unwrap();
+
+                        let row = self
+                            .table
+                            .get(state)
+                            .ok_or(LrParserError::MissingState(state))?;
+
+                        let goto = row
+                            .goto(rule.lhs)
+                            .ok_or(LrParserError::MissingGoto(state, rule.lhs))?;
+
+                        states.push(goto);
+
                         let reducer = self.reducers.get(*rule_id).unwrap();
                         reducer(rule, drained)
                     };
@@ -189,18 +224,12 @@ where
                     }
 
                     stack.push(ast);
-
-                    state = row
-                        .goto(rule.lhs)
-                        .ok_or(LrParserError::MissingGoto(state, rule.lhs))?;
                 }
                 Action::Accept => {
                     return Ok(stack.pop().unwrap());
                 }
             }
         }
-
-        Err(LexerError::unexpected_end_of_stream(lexer.current_location()).into())
     }
 }
 
@@ -209,29 +238,29 @@ mod tests {
     use crate::{
         ast::AstNode,
         fixtures::{FIXTURE_LR0_GRAMMAR, FIXTURE_LR1_GRAMMAR},
-        lexer::fixtures::lexer_fixture_lr0,
-        parser::Parser as _,
+        lexer::fixtures::{lexer_fixture_lr0, lexer_fixture_lr1},
+        traits::Parser as _,
     };
 
-    use super::{LrParser, Table};
+    use super::{LrParser, LrTable};
 
     #[test]
     pub fn test_lr0_grammar_table_building() {
-        let table = Table::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
         println!("{}", table);
     }
 
     #[test]
     pub fn test_lr1_grammar_table_building() {
-        let table = Table::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
         println!("{}", table);
     }
 
     #[test]
     pub fn test_lr0_parser() {
-        let table = Table::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
 
-        let mut lexer = lexer_fixture_lr0("1 + 1 * 0".chars());
+        let mut lexer = lexer_fixture_lr0("1 + 1 * 0 * 1 * 1".chars());
         let parser = LrParser::<AstNode<'_>>::new(
             &FIXTURE_LR0_GRAMMAR,
             &table,
@@ -240,6 +269,24 @@ mod tests {
                 AstNode::reduce,
                 AstNode::reduce,
                 AstNode::reduce,
+                AstNode::reduce,
+                AstNode::reduce,
+            ],
+        );
+
+        let ast = parser.parse(&mut lexer).unwrap();
+        println!("{:#?}", ast);
+    }
+
+    #[test]
+    pub fn test_lr1_parser() {
+        let table = LrTable::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
+
+        let mut lexer = lexer_fixture_lr1("n + n".chars());
+        let parser = LrParser::<AstNode<'_>>::new(
+            &FIXTURE_LR1_GRAMMAR,
+            &table,
+            &[
                 AstNode::reduce,
                 AstNode::reduce,
                 AstNode::reduce,

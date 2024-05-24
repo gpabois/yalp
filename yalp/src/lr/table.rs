@@ -1,8 +1,8 @@
 use prettytable::Table as PtTable;
 use std::collections::HashMap;
 
-use crate::sym::traits::SymbolSliceable as _;
 use crate::traits::IntoRef;
+use crate::traits::SymbolSliceable as _;
 use crate::{grammar::traits::Grammar, ItemSetId, RuleSet, Symbol};
 
 use super::{Action, Graph, LrParserError, LrResult, Transition};
@@ -95,9 +95,6 @@ impl<'sid, 'g> Row<'sid, 'g> {
             .filter(|(sym, _)| sym.is_terminal())
             .filter(|(sym, _)| !sym.is_eos())
             .filter(|(sym, _)| !sym.is_epsilon())
-            .inspect(|(sym, set)| {
-                println!("{} - {} -> {}", transition.from.id, sym, set.id);
-            })
             .map(|(sym, set)| (*sym, Action::Shift(set.id)))
         {
             // Shift/reduce conflict
@@ -125,7 +122,6 @@ impl<'sid, 'g> Row<'sid, 'g> {
         }
 
         if transition.from.has_exhausted_items() {
-            println!("{}", transition.from);
             let rule_id = transition.from.get_exhausted_rule();
             actions.extend(
                 symbols
@@ -151,19 +147,19 @@ impl<'sid, 'g> Row<'sid, 'g> {
 }
 
 #[derive(PartialEq)]
-pub struct Table<'sid, 'sym> {
+pub struct LrTable<'sid, 'sym> {
     symbols: &'sym [Symbol<'sid>],
     rows: Vec<Row<'sym, 'sid>>,
 }
 
-impl std::fmt::Debug for Table<'_, '_> {
+impl std::fmt::Debug for LrTable<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f)?;
         <Self as std::fmt::Display>::fmt(self, f)
     }
 }
 
-impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
+impl<'sym, 'sid> std::fmt::Display for LrTable<'sym, 'sid> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut table = PtTable::new();
 
@@ -203,7 +199,7 @@ impl<'sym, 'sid> std::fmt::Display for Table<'sym, 'sid> {
     }
 }
 
-impl<'sid, 'sym> Table<'sid, 'sym>
+impl<'sid, 'sym> LrTable<'sid, 'sym>
 where
     'sid: 'sym,
 {
@@ -239,6 +235,6 @@ where
         let mut graph = Graph::<K>::new(&rules);
         graph.build()?;
 
-        Table::from_graph(&graph, grammar.as_symbol_slice())
+        LrTable::from_graph(&graph, grammar.as_symbol_slice())
     }
 }

@@ -52,21 +52,6 @@ pub mod traits {
     }
 }
 
-#[macro_export]
-macro_rules! grammar {
-    (symbols: [$($syms:expr),*], rules: [$($rules:expr),*]) => {
-        $crate::Grammar::new([
-           $crate::Symbol::start(),
-           $crate::Symbol::eos(),
-           $crate::Symbol::epsilon(),
-           $($syms),*
-        ], [
-            $($rules),*
-        ])
-    };
-
-}
-
 #[derive(Debug, PartialEq)]
 /// A grammar
 ///

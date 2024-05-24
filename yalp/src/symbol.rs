@@ -20,27 +20,6 @@ pub struct Symbol<'s> {
     kind: SymbolKind,
 }
 
-#[macro_export]
-macro_rules! sym {
-    {<$symbol:tt>} => {stringify!(<$symbol>)};
-    {@$symbol:literal} => {$symbol};
-    {$symbol:tt} => {stringify!($symbol)}
-}
-
-#[macro_export]
-macro_rules! nterm {
-    ($kind:tt) => {
-        $crate::Symbol::new(sym!($kind), true)
-    };
-}
-
-#[macro_export]
-macro_rules! term {
-    ($kind:tt) => {
-        $crate::Symbol::new(sym!($kind), true)
-    };
-}
-
 pub const START: &str = "<start>";
 pub const EOS: &str = "<eos>";
 
@@ -61,6 +40,14 @@ impl<'s> Symbol<'s> {
                 SymbolKind::NonTerminal
             },
         }
+    }
+
+    pub const fn term(id: &'s str) -> Self {
+        Self::new(id, true)
+    }
+
+    pub const fn nterm(id: &'s str) -> Self {
+        Self::new(id, false)
     }
 
     #[inline(always)]

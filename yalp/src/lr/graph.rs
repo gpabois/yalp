@@ -5,8 +5,8 @@ use crate::{ItemSet, ItemSetId, RuleSet, Symbol};
 
 pub struct Graph<'sid, 'sym, 'rule, const K: usize> {
     rules: &'rule RuleSet<'sid, 'sym>,
-    pub (super) sets: Vec<ItemSet<'sid, 'sym, 'rule, K>>,
-    pub (super) transitions: Vec<(ItemSetId, &'sym Symbol<'sid>, ItemSetId)>
+    pub(super) sets: Vec<ItemSet<'sid, 'sym, 'rule, K>>,
+    pub(super) transitions: Vec<(ItemSetId, &'sym Symbol<'sid>, ItemSetId)>,
 }
 
 impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
@@ -14,10 +14,10 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
         Self {
             rules,
             sets: vec![rules.start_item_set()],
-            transitions: vec![]
+            transitions: vec![],
         }
     }
-    
+
     /// Returns true if a set has the same kernel.
     fn contains(&self, set: &ItemSet<'sid, 'sym, 'rule, K>) -> bool {
         self.sets.iter().any(|s| s == set)
@@ -55,14 +55,15 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
         let rules = self.rules;
 
         while let Some(set_id) = stack.pop_front() {
-            self
-                .get_mut(set_id)
+            self.get_mut(set_id)
                 .ok_or(LrParserError::MissingState(set_id))?
                 .close(rules);
-            
-            println!("{}", self.get(set_id).unwrap());
 
-            for (symbol, kernel) in self.get(set_id).ok_or(LrParserError::MissingState(set_id))?.reachable_sets(rules) {
+            for (symbol, kernel) in self
+                .get(set_id)
+                .ok_or(LrParserError::MissingState(set_id))?
+                .reachable_sets(rules)
+            {
                 let to_id = if !self.contains(&kernel) {
                     let id = self.push(kernel);
                     stack.push_back(id);

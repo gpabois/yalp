@@ -1,13 +1,18 @@
-use proc_macro2::{Ident, Literal, TokenStream};
 use lazy_static::lazy_static;
+use proc_macro2::{Ident, Literal, TokenStream};
 
-use yalp::{lr::LrTable, traits::{Ast as _, Parser as _, Token as _}, AstIter, LrParser, LrParserError, Rule, RuleReducer, EOS, START};
-use crate::{Token, Lexer, Error};
+use crate::{Error, Lexer, Token};
+use yalp::{
+    lr::LrTable,
+    traits::{Ast as _, Parser as _, Token as _},
+    AstIter, LrParser, LrParserError, Rule, RuleReducer, EOS, START,
+};
 
 #[derive(Debug, Default)]
 pub struct SymbolIdentSet(Vec<String>);
 
-const GRAMMAR: yalp::Grammar<'static, 12, 7> = yalp::Grammar::new([
+const GRAMMAR: yalp::Grammar<'static, 12, 7> = yalp::Grammar::new(
+    [
         yalp::Symbol::start(),
         yalp::Symbol::eos(),
         yalp::Symbol::epsilon(),
@@ -20,18 +25,24 @@ const GRAMMAR: yalp::Grammar<'static, 12, 7> = yalp::Grammar::new([
         yalp::Symbol::nterm("<symbol-ident-set>"),
         yalp::Symbol::nterm("<symbol-ident>"),
         yalp::Symbol::nterm("<ident-chain>"),
-    ], [
+    ],
+    [
         yalp::RuleDef::new(START, &["<symbol-ident-set>", EOS]),
-        yalp::RuleDef::new("<symbol-ident-set>", &["<symbol-ident-set>", ",", "<symbol-ident>"]),
+        yalp::RuleDef::new(
+            "<symbol-ident-set>",
+            &["<symbol-ident-set>", ",", "<symbol-ident>"],
+        ),
         yalp::RuleDef::new("<symbol-ident>", &["<ident-chain>"]),
         yalp::RuleDef::new("<symbol-ident>", &["<lit>"]),
         yalp::RuleDef::new("<symbol-ident>", &["<", "<ident-chain>", ">"]),
         yalp::RuleDef::new("<ident-chain>", &["<ident-chain>", "-", "<ident>"]),
         yalp::RuleDef::new("<ident-chain>", &["<ident>"]),
-]);
+    ],
+);
 
 lazy_static! {
-    static ref TABLE: Result<LrTable<'static, 'static>, LrParserError<'static, 'static>> = LrTable::build::<0, _>(&GRAMMAR);
+    static ref TABLE: Result<LrTable<'static, 'static>, LrParserError<'static, 'static>> =
+        LrTable::build::<0, _>(&GRAMMAR);
 }
 
 struct SymbolIdent(String);
@@ -42,7 +53,7 @@ enum Ast {
     Token(Token),
     IdentChain(IdentChain),
     SymbolIdent(SymbolIdent),
-    SymbolIdentSet(SymbolIdentSet)
+    SymbolIdentSet(SymbolIdentSet),
 }
 
 impl TryFrom<Ast> for SymbolIdentSet {
@@ -107,7 +118,6 @@ impl TryFrom<Ast> for Literal {
     }
 }
 
-
 impl yalp::traits::Ast for Ast {
     fn symbol_id(&self) -> &str {
         match self {
@@ -130,13 +140,13 @@ impl From<Token> for Ast {
 ///////////////////
 
 /// 1. START => <symbol-set-1> EOS
-fn parse_1(_: &Rule<'static, '_>, mut lhs:  AstIter<Ast>) -> Result<Ast, Error> {
+fn parse_1(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
     Ok(lhs.next().unwrap())
 }
 
 /// 2. <symbol-ident-set> => <symbol-ident-set>" , <symbol-ident>
-fn parse_2(_: &Rule<'static, '_>, mut lhs:  AstIter<Ast>) -> Result<Ast, Error> {
-    let mut set: SymbolIdentSet = lhs.next().unwrap().try_into()?; 
+fn parse_2(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
+    let mut set: SymbolIdentSet = lhs.next().unwrap().try_into()?;
     lhs.next();
     let ident: SymbolIdent = lhs.next().unwrap().try_into()?;
 
@@ -167,7 +177,7 @@ fn parse_5(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
 fn parse_6(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
     let mut chain: IdentChain = lhs.next().unwrap().try_into()?;
     let mut lhs = lhs.skip(1);
-    
+
     let ident: Ident = lhs.next().unwrap().try_into()?;
     chain.0.push_str(&ident.to_string());
 
@@ -181,31 +191,20 @@ fn parse_7(_: &Rule<'static, '_>, mut lhs: AstIter<Ast>) -> Result<Ast, Error> {
 }
 
 const REDUCERS: &[RuleReducer<'static, Ast, Error>] = &[
-    parse_1,
-    parse_2,
-    parse_3,
-    parse_4,
-    parse_5,
-    parse_6,
-    parse_7
+    parse_1, parse_2, parse_3, parse_4, parse_5, parse_6, parse_7,
 ];
 
 /// Parse a collection of symbol idents : <symbol-ident>, <symbol-ident> ...
 pub fn parse_symbol_ident_set(stream: TokenStream) -> Result<SymbolIdentSet, Error> {
     if stream.is_empty() {
-        return Ok(SymbolIdentSet::default())
+        return Ok(SymbolIdentSet::default());
     }
 
     let mut lexer = Lexer::new(stream);
-    
+
     let table = TABLE.as_ref().map_err(|err| err.clone())?;
 
-    let parser = LrParser::<Ast, _>::new(
-        &GRAMMAR, 
-        table, 
-        &REDUCERS
-    );
-
+    let parser = LrParser::<Ast, _>::new(&GRAMMAR, table, &REDUCERS);
 
     let ast = parser.parse(&mut lexer)?;
 
