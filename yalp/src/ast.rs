@@ -17,13 +17,13 @@ impl<'kind> AstNode<'kind> {
             children: children.collect(),
         }
     }
+}
 
-    pub fn reduce<'a, 'c>(
-        rule: &'a Rule<'kind>,
-        children: AstIter<'c, AstNode<'kind>>,
-    ) -> Result<AstNode<'kind>, YalpError<Infallible>> {
-        Ok(AstNode::new(rule.lhs.id, children))
-    }
+pub fn ast_reduce<'a, 'b, 'c>(
+    rule: &'a Rule<'b>,
+    children: AstIter<'c, AstNode<'b>>,
+) -> Result<AstNode<'b>, YalpError<Infallible>> {
+    Ok(AstNode::new(rule.lhs.id, children))
 }
 
 impl<'kind> Ast for AstNode<'kind> {

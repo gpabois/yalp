@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::marker::{PhantomData, PhantomPinned};
 
 use crate::grammar::traits::Grammar;
 use crate::token::traits::Token;
@@ -8,7 +9,7 @@ use crate::{
     parser::{traits::Ast, traits::Parser},
     ItemSetId, RuleId, RuleReducer, RuleSet,
 };
-use crate::{OwnedSymbol, YalpError};
+use crate::{AstIter, OwnedSymbol, Rule, YalpError};
 
 mod action;
 mod codegen;
@@ -85,27 +86,26 @@ impl std::fmt::Display for LrParserError {
 
 pub type LrResult<T> = Result<T, LrParserError>;
 
-pub struct LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, CustomError>
+pub struct LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error>
 where
     Node: Ast,
     Table: self::traits::LrTable,
+    Reducer: Fn(&Rule, AstIter<Node>) -> Result<Node, YalpError<Error>>,
 {
     rules: RuleSet<'sid, 'sym>,
     table: &'table Table,
-    reducers: &'reducers [RuleReducer<'sid, Node, CustomError>],
+    reducers: &'reducers [Reducer],
+    _phantom: PhantomData<(Node, Error)>,
 }
 
-impl<'sid, 'g, 'table, 'reducers, Node, Table, CustomError>
-    LrParser<'sid, 'g, 'table, 'reducers, Node, Table, CustomError>
+impl<'sid, 'g, 'table, 'reducers, Node, Table, Reducer, Error>
+    LrParser<'sid, 'g, 'table, 'reducers, Node, Table, Reducer, Error>
 where
     Node: Ast,
     Table: self::traits::LrTable,
+    Reducer: Fn(&Rule, AstIter<Node>) -> Result<Node, YalpError<Error>>,
 {
-    pub fn new<G>(
-        grammar: &'g G,
-        table: &'table Table,
-        reducers: &'reducers [RuleReducer<'sid, Node, CustomError>],
-    ) -> Self
+    pub fn new<G>(grammar: &'g G, table: &'table Table, reducers: &'reducers [Reducer]) -> Self
     where
         G: Grammar<'sid>,
     {
@@ -123,18 +123,20 @@ where
             rules: RuleSet::new(grammar),
             table,
             reducers,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<'sid, 'sym, 'table, 'reducers, Node, Table, CustomError> Parser
-    for LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, CustomError>
+impl<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error> Parser
+    for LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error>
 where
     Node: Ast,
     Table: self::traits::LrTable,
+    Reducer: Fn(&Rule, AstIter<Node>) -> Result<Node, YalpError<Error>>,
 {
     type Ast = Node;
-    type Error = YalpError<CustomError>;
+    type Error = YalpError<Error>;
 
     fn parse<L: Lexer>(&self, lexer: &mut L) -> Result<Self::Ast, Self::Error>
     where
@@ -235,7 +237,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::AstNode,
+        ast::{ast_reduce, AstNode},
         fixtures::{FIXTURE_LR0_GRAMMAR, FIXTURE_LR1_GRAMMAR},
         lexer::fixtures::{lexer_fixture_lr0, lexer_fixture_lr1},
         traits::Parser as _,
@@ -260,16 +262,12 @@ mod tests {
         let table = LrTable::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
 
         let mut lexer = lexer_fixture_lr0("1 + 1 * 0 * 1 * 1".chars());
-        let parser = LrParser::<AstNode, _, _>::new(
+
+        let parser = LrParser::new(
             &FIXTURE_LR0_GRAMMAR,
             &table,
             &[
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
+                ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce,
             ],
         );
 
@@ -282,16 +280,11 @@ mod tests {
         let table = LrTable::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
 
         let mut lexer = lexer_fixture_lr1("n + n".chars());
-        let parser = LrParser::<AstNode, _, _>::new(
+        let parser = LrParser::new(
             &FIXTURE_LR1_GRAMMAR,
             &table,
             &[
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
-                AstNode::reduce,
+                ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce,
             ],
         );
 

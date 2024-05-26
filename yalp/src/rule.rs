@@ -13,8 +13,8 @@ pub type RuleId = usize;
 pub type AstIter<'a, Ast> = Drain<'a, Ast>;
 
 /// A rule reducer
-pub type RuleReducer<'b, Ast, CustomError> =
-    for<'a, 'c> fn(&'a Rule<'b>, AstIter<'c, Ast>) -> Result<Ast, YalpError<CustomError>>;
+pub type RuleReducer<Ast, Error> =
+    for<'a, 'b, 'c> fn(&'a Rule<'b>, AstIter<'c, Ast>) -> Result<Ast, YalpError<Error>>;
 
 pub mod traits {
     use crate::RuleDef;

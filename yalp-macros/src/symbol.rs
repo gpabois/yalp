@@ -152,13 +152,11 @@ impl From<Token> for Ast {
 // Rule reducers //
 ///////////////////
 
-/// 1. START => <symbol-set-1> EOS
-fn parse_1(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r1(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     Ok(lhs.next().unwrap())
 }
 
-/// 2. <symbol-ident-set> => <symbol-ident-set>" , <symbol-ident>
-fn parse_2(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r2(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let mut set: SymbolIdentSet = lhs.next().unwrap().try_into()?;
     lhs.next();
     let ident: SymbolIdent = lhs.next().unwrap().try_into()?;
@@ -168,35 +166,30 @@ fn parse_2(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Er
     Ok(Ast::SymbolIdentSet(set))
 }
 
-/// 3. <symbol-ident-set> =>  <symbol-ident>
-fn parse_3(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r3(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let ident: SymbolIdent = lhs.next().unwrap().try_into()?;
 
     Ok(Ast::SymbolIdentSet(SymbolIdentSet(vec![ident.0])))
 }
 
-/// 3. <symbol-ident> => <ident-chain>
-fn parse_4(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r4(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let chain: IdentChain = lhs.next().unwrap().try_into()?;
     Ok(Ast::SymbolIdent(SymbolIdent(chain.0)))
 }
 
-/// 4. <symbol-ident> <lit>
-fn parse_5(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r5(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let lit: Literal = lhs.next().unwrap().try_into()?;
     Ok(Ast::SymbolIdent(SymbolIdent(lit.to_string())))
 }
 
-/// 5. <symbol-ident> => < <ident-chain> >
-fn parse_6(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r6(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     lhs.next();
     let chain: IdentChain = lhs.next().unwrap().try_into()?;
 
     Ok(Ast::SymbolIdent(SymbolIdent(format!("<{}>", chain.0))))
 }
 
-/// 6. <ident-chain> => <ident-chain> - <ident>
-fn parse_7(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r7(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let mut chain: IdentChain = lhs.next().unwrap().try_into()?;
     let mut lhs = lhs.skip(1);
 
@@ -206,15 +199,12 @@ fn parse_7(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Er
     Ok(Ast::IdentChain(chain))
 }
 
-/// 7. <ident-chain> => <ident>
-fn parse_8(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r8(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let ident: Ident = lhs.next().unwrap().try_into()?;
     Ok(Ast::IdentChain(IdentChain(ident.to_string())))
 }
 
-const REDUCERS: &[RuleReducer<'static, Ast, Error>] = &[
-    parse_1, parse_2, parse_3, parse_4, parse_5, parse_6, parse_7, parse_8,
-];
+const REDUCERS: &[RuleReducer<Ast, Error>] = &[r1, r2, r3, r4, r5, r6, r7, r8];
 
 /// Parse a collection of symbol idents : <symbol-ident>, <symbol-ident> ...
 pub fn parse_symbol_ident_set(stream: TokenStream) -> Result<SymbolIdentSet, YalpError<Error>> {
@@ -228,7 +218,7 @@ pub fn parse_symbol_ident_set(stream: TokenStream) -> Result<SymbolIdentSet, Yal
 
     println!("{}", table);
 
-    let parser = LrParser::new(&GRAMMAR, table, &REDUCERS);
+    let parser = LrParser::new(&GRAMMAR, table, REDUCERS);
 
     let ast = parser.parse(&mut lexer)?;
 

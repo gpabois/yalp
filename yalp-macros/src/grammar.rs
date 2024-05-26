@@ -1,5 +1,3 @@
-use std::convert::Infallible;
-
 use lazy_static::lazy_static;
 use proc_macro2::{Group, Ident, TokenStream};
 use yalp::{
@@ -135,7 +133,7 @@ impl From<Token> for Ast {
 }
 
 /// 1. START => <grammar> EOS
-fn parse_1(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r1(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     Ok(lhs.next().unwrap())
 }
 
@@ -155,7 +153,7 @@ fn merge(grammar: &mut GrammarInput, attr: Attribute) -> Result<(), YalpError<Er
 }
 
 /// 2. <grammar> => <grammar> , <attribute>
-fn parse_2(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r2(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let mut grammar: GrammarInput = lhs.next().unwrap().try_into()?;
     lhs.next();
 
@@ -166,7 +164,7 @@ fn parse_2(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Er
 }
 
 /// 3. <grammar> => <attribute>
-fn parse_3(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r3(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let attr: Attribute = lhs.next().unwrap().try_into()?;
     let mut grammar = GrammarInput::default();
     merge(&mut grammar, attr)?;
@@ -174,7 +172,7 @@ fn parse_3(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Er
 }
 
 /// 4. <attribute> => <ident> : <group>
-fn parse_4(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r4(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     let ident: Ident = lhs.next().unwrap().try_into()?;
     lhs.next();
     let group: Group = lhs.next().unwrap().try_into()?;
@@ -186,7 +184,7 @@ fn parse_4(_: &Rule<'static>, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Er
     .into())
 }
 
-const REDUCERS: &[RuleReducer<'static, Ast, Error>] = &[parse_1, parse_2, parse_3, parse_4];
+const REDUCERS: &[RuleReducer<Ast, Error>] = &[r1, r2, r3, r4];
 
 pub fn parse_grammar(stream: TokenStream) -> Result<GrammarInput, YalpError<Error>> {
     let mut lexer = Lexer::new(stream);
@@ -194,7 +192,7 @@ pub fn parse_grammar(stream: TokenStream) -> Result<GrammarInput, YalpError<Erro
 
     println!("{}", table);
 
-    let parser = LrParser::new(&GRAMMAR, table, &REDUCERS);
+    let parser = LrParser::new(&GRAMMAR, table, REDUCERS);
 
     let ast = parser.parse(&mut lexer)?;
 
