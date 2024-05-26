@@ -10,19 +10,55 @@ pub mod token;
 
 pub use grammar::{Grammar, GrammarError, GrammarResult};
 pub use item::*;
+pub use lexer::*;
 pub use rule::*;
 pub use symbol::*;
 
 pub use lr::{LrParser, LrParserError, LrTable};
 
+pub use lexer::Span;
+
 pub mod traits {
     pub use crate::lexer::traits::Lexer;
     pub use crate::parser::traits::{Ast, Parser};
-    pub use crate::symbol::traits::{IntoRef, SymbolSliceable};
+    pub use crate::symbol::traits::SymbolSlice;
     pub use crate::token::traits::Token;
 }
 
 mod array;
+
+#[derive(Debug)]
+pub enum YalpError<Custom> {
+    LexerError(LexerError),
+    LrParserError(LrParserError),
+    WrongSymbol { expecting: String, got: String },
+    Custom(Custom),
+}
+
+impl<Custom> YalpError<Custom> {
+    pub fn custom(value: Custom) -> Self {
+        Self::Custom(value)
+    }
+
+    pub fn wrong_symbol(expecting: &str, got: &str) -> Self {
+        Self::WrongSymbol {
+            expecting: expecting.to_owned(),
+            got: got.to_owned(),
+        }
+    }
+}
+
+impl<Custom> From<LrParserError> for YalpError<Custom> {
+    fn from(value: LrParserError) -> Self {
+        Self::LrParserError(value)
+    }
+}
+
+impl<Custom> From<LexerError> for YalpError<Custom> {
+    fn from(value: LexerError) -> Self {
+        Self::LexerError(value)
+    }
+}
 
 #[cfg(test)]
 pub mod fixtures {

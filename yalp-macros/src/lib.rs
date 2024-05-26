@@ -3,60 +3,16 @@ use proc_macro::TokenStream;
 use quote::quote;
 
 pub(crate) mod grammar;
-pub(crate) mod symbol;
 pub(crate) mod rule;
+pub(crate) mod symbol;
 
 pub(crate) mod lexer;
 
-pub(crate) use symbol::{SymbolIdentSet, parse_symbol_ident_set};
 pub(crate) use grammar::parse_grammar;
 pub(crate) use lexer::{Lexer, Token};
-use yalp::{parser::ParserError, LexerError, LrParserError};
+pub(crate) use symbol::{parse_symbol_ident_set, SymbolIdentSet};
 
-#[derive(Debug)]
-pub(crate) enum Error {
-    ParserError(LrParserError<'static, 'static>),
-    LexerError(LexerError),
-    WrongSymbol {
-        expecting: String,
-        got: String
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::ParserError(err) => err.fmt(f),
-            Error::LexerError(err) => err.fmt(f),
-            Error::WrongSymbol { expecting, got } => write!(f, "wrong symbol: {expecting}, {got}"),
-        }
-    }
-}
-
-impl From<ParserError<LrParserError<'static, 'static>, Self>> for Error {
-    fn from(value: ParserError<LrParserError<'static, 'static>, Self>) -> Self {
-        match value {
-            ParserError::Lexer(lexer) => Error::LexerError(lexer),
-            ParserError::Parser(parser) => Error::ParserError(parser),
-            ParserError::Custom(err) => err,
-        }
-    }
-}
-
-impl From<LrParserError<'static, 'static>> for Error {
-    fn from(value: LrParserError<'static, 'static>) -> Self {
-        Self::ParserError(value)
-    }
-}
-
-impl Error {
-    pub fn wrong_symbol(expecting: &str, got: &str) -> Self {
-        Self::WrongSymbol {
-            expecting: expecting.to_string(),
-            got: got.to_string()
-        }
-    }
-}
+pub(crate) type Error = ();
 
 /// Declares a new grammar
 ///
@@ -70,7 +26,7 @@ impl Error {
 ///         E => E "+" B;
 ///         E => B;
 ///         B => 0;
-///         B => 1; 
+///         B => 1;
 ///     }
 /// }
 /// ```
@@ -81,7 +37,7 @@ pub fn grammar(stream: TokenStream) -> TokenStream {
 
 pub(crate) fn process_grammar_macro(stream: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     let grammar_input = parse_grammar(stream).unwrap();
-    quote!{}.into()
+    quote! {}.into()
 }
 
 #[cfg(test)]
@@ -89,15 +45,23 @@ mod tests {
     use std::str::FromStr;
 
     use proc_macro2::TokenStream;
-    
-    use super::process_grammar_macro;
+
+    use super::parse_grammar;
 
     #[test]
     pub fn test_grammar_macro() {
-        process_grammar_macro(TokenStream::from_str("
-            terminals: [],
+        let ast = parse_grammar(
+            TokenStream::from_str(
+                "
+            terminals: [E, B, 0, <long-terminal>],
             non_terminals: [],
             rules: {}
-        ").expect("cannot parse macro"));
+        ",
+            )
+            .expect("cannot parse macro"),
+        );
+
+        println!("{:#?}", ast);
     }
 }
+

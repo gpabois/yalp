@@ -9,15 +9,42 @@ pub enum SymbolKind {
     Epsilon,
 }
 
-/// The identifier of a symbol.
-pub struct SymbolId(str);
+#[derive(Debug, Clone)]
+pub struct OwnedSymbol {
+    pub id: String,
+    kind: SymbolKind,
+}
+
+impl OwnedSymbol {
+    pub fn borrow(&self) -> Symbol<'_> {
+        Symbol {
+            id: &self.id,
+            kind: self.kind,
+        }
+    }
+}
+
+impl std::fmt::Display for OwnedSymbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)
+    }
+}
 
 /// Defines a symbol
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct Symbol<'s> {
     /// *Unique* identifier of the symbol
     pub id: &'s str,
     kind: SymbolKind,
+}
+
+impl<'s> Symbol<'s> {
+    pub fn to_owned(&self) -> OwnedSymbol {
+        OwnedSymbol {
+            id: self.id.to_owned(),
+            kind: self.kind.to_owned(),
+        }
+    }
 }
 
 pub const START: &str = "<start>";
@@ -109,73 +136,71 @@ impl<'s> Hash for Symbol<'s> {
 pub mod traits {
     use crate::Symbol;
 
-    pub trait IntoRef<'a, T: ?Sized> {
-        fn into_ref(self) -> &'a T;
-    }
-
-    impl<'a, T: ?Sized> IntoRef<'a, T> for &'a T {
-        fn into_ref(self) -> &'a T {
-            self
-        }
-    }
-
     /// A trait to implement common methods for object holding symbols.
-    pub trait SymbolSliceable<'sid, 'sym, 'a>
+    pub trait SymbolSlice<'sid>
     where
-        'sid: 'sym,
-        Self: 'a,
-        &'a Self: IntoRef<'sym, [Symbol<'sid>]>,
+        Self: AsRef<[Symbol<'sid>]>,
     {
-        fn sym(&'a self, id: &str) -> &'sym Symbol<'sid> {
-            self.into_ref()
+        fn sym(&self, id: &str) -> Symbol<'sid> {
+            self.as_ref()
                 .iter()
                 .find(|sym| sym.id == id)
-                .expect(&format!("the grammar does not include symbol {}", id))
+                .copied()
+                .unwrap_or_else(|| panic!("the grammar does not include symbol {}", id))
         }
 
-        fn eos(&'a self) -> &'sym Symbol<'sid> {
-            self.into_ref()
+        fn eos(&self) -> Symbol<'sid> {
+            self.as_ref()
                 .iter()
                 .find(|sym| Symbol::is_eos(sym))
+                .copied()
                 .expect("the grammar does not include <eos> terminal.")
         }
 
-        fn start(&'a self) -> &'sym Symbol<'sid> {
-            self.into_ref()
+        fn start(&self) -> Symbol<'sid> {
+            self.as_ref()
                 .iter()
                 .find(|sym| Symbol::is_start(sym))
+                .copied()
                 .expect("the grammar does not include <start> symbol.")
         }
 
-        fn epsilon(&'a self) -> &'sym Symbol<'sid> {
-            self.into_ref()
+        fn epsilon(&self) -> Symbol<'sid> {
+            self.as_ref()
                 .iter()
                 .find(|sym| Symbol::is_epsilon(sym))
+                .copied()
                 .expect("the grammar does not include <eps> terminal.")
         }
 
-        fn get_symbol_by_id(&'a self, id: &str) -> Option<&'sym Symbol<'sid>> {
-            self.into_ref().iter().find(|sym| sym.id == id)
+        fn get_symbol_by_id(&self, id: &str) -> Option<Symbol<'sid>> {
+            self.as_ref().iter().find(|sym| sym.id == id).copied()
         }
 
-        fn iter_terminals(&'a self) -> impl Iterator<Item = &'sym Symbol<'sid>> {
-            self.into_ref().iter().filter(|sym| sym.is_terminal())
+        fn iter_terminals<'a>(&'a self) -> impl Iterator<Item = Symbol<'sid>> + 'a
+        where
+            'sid: 'a,
+        {
+            self.as_ref()
+                .iter()
+                .filter(|sym| sym.is_terminal())
+                .copied()
         }
 
-        fn iter_non_terminals(&'a self) -> impl Iterator<Item = &'sym Symbol<'sid>> {
-            self.into_ref().iter().filter(|sym| !sym.is_terminal())
+        fn iter_non_terminals<'a>(&'a self) -> impl Iterator<Item = Symbol<'sid>> + 'a
+        where
+            'sid: 'a,
+        {
+            self.as_ref()
+                .iter()
+                .filter(|sym| !sym.is_terminal())
+                .copied()
         }
 
-        fn as_symbol_slice(&'a self) -> &'sym [Symbol<'sid>] {
-            self.into_ref()
+        fn as_symbol_slice(&self) -> &[Symbol<'sid>] {
+            self.as_ref()
         }
     }
 
-    impl<'sid, 'sym, 'a, T> SymbolSliceable<'sid, 'sym, 'a> for T
-    where
-        T: 'a + ?Sized,
-        &'a T: IntoRef<'sym, [Symbol<'sid>]>,
-        'sid: 'sym,
-    {
-    }
+    impl<'sid, T> SymbolSlice<'sid> for T where T: AsRef<[Symbol<'sid>]> {}
 }

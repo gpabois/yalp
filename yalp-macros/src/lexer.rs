@@ -1,8 +1,9 @@
-use crate::Error;
 use proc_macro2::{Group, Ident, Literal, TokenStream, TokenTree};
-use yalp::{lexer::LexerResult, traits::Token as _};
+use yalp::{lexer::LexerResult, traits::Token as _, YalpError};
 
-#[derive(Debug)]
+use crate::Error;
+
+#[derive(Debug, Clone)]
 pub(crate) struct Token(TokenTree);
 
 impl yalp::token::traits::Token for Token {
@@ -24,34 +25,34 @@ impl yalp::token::traits::Token for Token {
 }
 
 impl TryFrom<Token> for Group {
-    type Error = Error;
+    type Error = YalpError<Error>;
 
     fn try_from(value: Token) -> Result<Self, Self::Error> {
         match value.0 {
             TokenTree::Group(group) => Ok(group),
-            _ => Err(Error::wrong_symbol("<group>", value.symbol_id())),
+            _ => Err(Self::Error::wrong_symbol("<group>", value.symbol_id())),
         }
     }
 }
 
 impl TryFrom<Token> for Ident {
-    type Error = Error;
+    type Error = YalpError<Error>;
 
     fn try_from(value: Token) -> Result<Self, Self::Error> {
         match value.0 {
             TokenTree::Ident(ident) => Ok(ident),
-            _ => Err(Error::wrong_symbol("<ident>", value.symbol_id())),
+            _ => Err(Self::Error::wrong_symbol("<ident>", value.symbol_id())),
         }
     }
 }
 
 impl TryFrom<Token> for Literal {
-    type Error = Error;
+    type Error = YalpError<Error>;
 
     fn try_from(value: Token) -> Result<Self, Self::Error> {
         match value.0 {
             TokenTree::Literal(lit) => Ok(lit),
-            _ => Err(Error::wrong_symbol("<lit>", value.symbol_id())),
+            _ => Err(Self::Error::wrong_symbol("<lit>", value.symbol_id())),
         }
     }
 }
@@ -87,4 +88,3 @@ impl yalp::traits::Lexer for Lexer {
         self.current_span
     }
 }
-

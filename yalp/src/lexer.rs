@@ -53,7 +53,7 @@ pub mod traits {
     pub trait Lexer: Iterator<Item = LexerResult<Self::Token>> {
         type Token: Token;
 
-        fn current_location(&self) -> Span;
+        fn span(&self) -> Span;
     }
 }
 
@@ -112,7 +112,7 @@ where
 {
     type Token = Token<'kind>;
 
-    fn current_location(&self) -> Span {
+    fn span(&self) -> Span {
         self.current_location
     }
 }
@@ -129,7 +129,7 @@ where
             buffer: String::default(),
             reconsume: None,
             current_location: Span::default(),
-            _phantom: PhantomData::default(),
+            _phantom: PhantomData,
         }
     }
 
@@ -330,4 +330,3 @@ mod tests {
         assert_eq!(tokens, expected_tokens);
     }
 }
-

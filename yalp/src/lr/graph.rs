@@ -5,8 +5,8 @@ use crate::{ItemSet, ItemSetId, RuleSet, Symbol};
 
 pub struct Graph<'sid, 'sym, 'rule, const K: usize> {
     rules: &'rule RuleSet<'sid, 'sym>,
-    pub(super) sets: Vec<ItemSet<'sid, 'sym, 'rule, K>>,
-    pub(super) transitions: Vec<(ItemSetId, &'sym Symbol<'sid>, ItemSetId)>,
+    pub(super) sets: Vec<ItemSet<'sid, 'rule, K>>,
+    pub(super) edges: Vec<(ItemSetId, Symbol<'sid>, ItemSetId)>,
 }
 
 impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
@@ -14,24 +14,24 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
         Self {
             rules,
             sets: vec![rules.start_item_set()],
-            transitions: vec![],
+            edges: vec![],
         }
     }
 
     /// Returns true if a set has the same kernel.
-    fn contains(&self, set: &ItemSet<'sid, 'sym, 'rule, K>) -> bool {
+    fn contains(&self, set: &ItemSet<'sid, 'rule, K>) -> bool {
         self.sets.iter().any(|s| s == set)
     }
 
-    fn get_mut(&mut self, id: usize) -> Option<&mut ItemSet<'sid, 'sym, 'rule, K>> {
+    fn get_mut(&mut self, id: usize) -> Option<&mut ItemSet<'sid, 'rule, K>> {
         self.sets.get_mut(id)
     }
 
-    fn get(&self, id: usize) -> Option<&ItemSet<'sid, 'sym, 'rule, K>> {
+    fn get(&self, id: usize) -> Option<&ItemSet<'sid, 'rule, K>> {
         self.sets.get(id)
     }
 
-    fn get_id(&self, kernel: &ItemSet<'sid, 'sym, 'rule, K>) -> Option<usize> {
+    fn get_id(&self, kernel: &ItemSet<'sid, 'rule, K>) -> Option<usize> {
         self.sets
             .iter()
             .find(|set| *set == kernel)
@@ -39,7 +39,7 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
     }
 
     /// Push a new set in the graph, if it does not yet exist.
-    fn push(&mut self, mut set: ItemSet<'sid, 'sym, 'rule, K>) -> usize {
+    fn push(&mut self, mut set: ItemSet<'sid, 'rule, K>) -> usize {
         if !self.contains(&set) {
             let id = self.sets.len();
             set.id = id;
@@ -50,7 +50,7 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
         self.get_id(&set).unwrap()
     }
 
-    pub fn build(&mut self) -> LrResult<'sid, 'sym, ()> {
+    pub fn build(&mut self) -> LrResult<()> {
         let mut stack = VecDeque::from_iter([0]);
         let rules = self.rules;
 
@@ -72,7 +72,7 @@ impl<'sid, 'sym, 'rule, const K: usize> Graph<'sid, 'sym, 'rule, K> {
                     self.get_id(&kernel).unwrap()
                 };
 
-                self.transitions.push((set_id, symbol, to_id));
+                self.edges.push((set_id, symbol, to_id));
             }
         }
 

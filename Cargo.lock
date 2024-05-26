@@ -183,6 +183,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruast"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a530662d4ffd9212b2f05774a78e23a685159d8d80ce10c1f5521929919c58c"
+
+[[package]]
 name = "rustversion"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -375,6 +381,7 @@ version = "0.1.0"
 dependencies = [
  "itertools",
  "prettytable-rs",
+ "ruast",
 ]
 
 [[package]]

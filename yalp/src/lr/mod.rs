@@ -2,15 +2,16 @@ use std::fmt::Debug;
 
 use crate::grammar::traits::Grammar;
 use crate::token::traits::Token;
-use crate::traits::IntoRef;
-use crate::traits::SymbolSliceable as _;
+use crate::traits::SymbolSlice as _;
 use crate::{
     lexer::{traits::Lexer, LexerError},
     parser::{traits::Ast, traits::Parser},
-    ItemSetId, RuleId, RuleReducer, RuleSet, Symbol,
+    ItemSetId, RuleId, RuleReducer, RuleSet,
 };
+use crate::{OwnedSymbol, YalpError};
 
 mod action;
+mod codegen;
 mod graph;
 mod table;
 mod transition;
@@ -21,32 +22,33 @@ pub use table::*;
 use transition::*;
 
 #[derive(Debug)]
-pub enum LrParserError<'sid, 'sym> {
+pub enum LrParserError {
     MissingRule(RuleId),
-    MissingAction(ItemSetId, &'sym Symbol<'sid>),
-    MissingGoto(ItemSetId, &'sym Symbol<'sid>),
+    MissingAction(ItemSetId, OwnedSymbol),
+    MissingGoto(ItemSetId, OwnedSymbol),
     MissingState(ItemSetId),
     LexerError(LexerError),
     UnknownSymbol(String),
     UnexpectedSymbol {
-        expected: &'sid str,
+        expected: String,
         got: String,
     },
     UnsupportedLrRank,
     ShiftReduceConflict {
         state: ItemSetId,
-        symbol: &'sym Symbol<'sid>,
+        symbol: OwnedSymbol,
         conflict: [Action; 2],
     },
+    Custom(String),
 }
 
-impl<'sid, 'sym> From<LexerError> for LrParserError<'sid, 'sym> {
+impl From<LexerError> for LrParserError {
     fn from(value: LexerError) -> Self {
         Self::LexerError(value)
     }
 }
 
-impl std::fmt::Display for LrParserError<'_, '_> {
+impl std::fmt::Display for LrParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LrParserError::MissingRule(id) => write!(f, "missing rule #{}", id),
@@ -61,7 +63,7 @@ impl std::fmt::Display for LrParserError<'_, '_> {
                 symbol.id, state, conflict
             ),
             LrParserError::UnsupportedLrRank => write!(f, "cannot build LR table for K > 1."),
-            LrParserError::LexerError(error) => write!(f, "{}", error),
+            LrParserError::LexerError(error) => write!(f, "{error}"),
             LrParserError::MissingAction(state_id, symbol) => write!(
                 f,
                 "missing action for terminal {} (state #{})",
@@ -72,37 +74,40 @@ impl std::fmt::Display for LrParserError<'_, '_> {
                 "missing goto for non-terminal {} (state #{})",
                 symbol, state_id
             ),
-            LrParserError::UnknownSymbol(symbol_id) => write!(f, "unknown symbol {}", symbol_id),
+            LrParserError::UnknownSymbol(symbol_id) => write!(f, "unknown symbol {symbol_id}"),
             LrParserError::UnexpectedSymbol { expected, got } => {
                 write!(f, "unexpected symbol {}, expecting {}", got, expected)
             }
+            LrParserError::Custom(err) => write!(f, "{err}"),
         }
     }
 }
 
-pub type LrResult<'sid, 'sym, T> = Result<T, LrParserError<'sid, 'sym>>;
+pub type LrResult<T> = Result<T, LrParserError>;
 
-pub struct LrParser<'sid, 'sym, 'table, 'reducers, Node>
+pub struct LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, CustomError>
 where
     Node: Ast,
+    Table: self::traits::LrTable,
 {
     rules: RuleSet<'sid, 'sym>,
-    table: &'table LrTable<'sid, 'sym>,
-    reducers: &'reducers [RuleReducer<'sid, Node>],
+    table: &'table Table,
+    reducers: &'reducers [RuleReducer<'sid, Node, CustomError>],
 }
 
-impl<'sid, 'g, 'table, 'reducers, Node> LrParser<'sid, 'g, 'table, 'reducers, Node>
+impl<'sid, 'g, 'table, 'reducers, Node, Table, CustomError>
+    LrParser<'sid, 'g, 'table, 'reducers, Node, Table, CustomError>
 where
     Node: Ast,
+    Table: self::traits::LrTable,
 {
     pub fn new<G>(
         grammar: &'g G,
-        table: &'table LrTable<'sid, 'g>,
-        reducers: &'reducers [RuleReducer<'sid, Node>],
+        table: &'table Table,
+        reducers: &'reducers [RuleReducer<'sid, Node, CustomError>],
     ) -> Self
     where
-        G: Grammar<'sid, 'g>,
-        &'g G: IntoRef<'g, [Symbol<'sid>]>,
+        G: Grammar<'sid>,
     {
         if reducers.len() != grammar.iter_rules().count() {
             panic!(
@@ -122,12 +127,14 @@ where
     }
 }
 
-impl<'sid, 'sym, 'table, 'reducers, Node> Parser for LrParser<'sid, 'sym, 'table, 'reducers, Node>
+impl<'sid, 'sym, 'table, 'reducers, Node, Table, CustomError> Parser
+    for LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, CustomError>
 where
     Node: Ast,
+    Table: self::traits::LrTable,
 {
     type Ast = Node;
-    type Error = LrParserError<'sid, 'sym>;
+    type Error = YalpError<CustomError>;
 
     fn parse<L: Lexer>(&self, lexer: &mut L) -> Result<Self::Ast, Self::Error>
     where
@@ -135,8 +142,6 @@ where
     {
         let mut states: Vec<ItemSetId> = vec![0];
         let mut stack: Vec<Node> = Vec::default();
-
-        println!("{}", self.table);
 
         let mut cursor = lexer.next();
 
@@ -148,20 +153,17 @@ where
                 Some(Ok(tok)) => (
                     self.rules
                         .get_symbol_by_id(tok.symbol_id())
-                        .ok_or_else(|| LrParserError::UnknownSymbol(tok.symbol_id().to_string()))?,
+                        .ok_or_else(|| LrParserError::UnknownSymbol(tok.symbol_id().to_string()))
+                        .map_err(Self::Error::from)?,
                     Some(tok),
                 ),
-                Some(Err(err)) => return Err(LrParserError::LexerError(err.clone())),
+                Some(Err(err)) => return Err(LrParserError::LexerError(err.clone()).into()),
             };
 
-            let row = self
+            let action = self
                 .table
-                .get(state)
-                .ok_or(LrParserError::MissingState(state))?;
-
-            let action = row
-                .action(symbol)
-                .ok_or(LrParserError::MissingAction(state, symbol))?;
+                .action(state, &symbol)
+                .ok_or(LrParserError::MissingAction(state, symbol.to_owned()))?;
 
             println!("#{} {} :: {}", state, symbol, action);
             match action {
@@ -178,7 +180,7 @@ where
                 // Reduce by the given rule
                 // Consume LHS's length number of symbols
                 Action::Reduce(rule_id) => {
-                    let rule = self.rules.get(*rule_id);
+                    let rule = self.rules.borrow_rule(*rule_id);
                     let consume = rule.rhs.len();
 
                     let ast = {
@@ -190,7 +192,7 @@ where
                             .try_for_each(|(node, expected_symbol)| {
                                 if node.symbol_id() != expected_symbol.id {
                                     Err(LrParserError::UnexpectedSymbol {
-                                        expected: expected_symbol.id,
+                                        expected: expected_symbol.id.to_string(),
                                         got: node.symbol_id().to_string(),
                                     })
                                 } else {
@@ -201,26 +203,23 @@ where
                         states.truncate(states.len().saturating_sub(consume));
                         state = states.last().copied().unwrap();
 
-                        let row = self
+                        let goto = self
                             .table
-                            .get(state)
-                            .ok_or(LrParserError::MissingState(state))?;
-
-                        let goto = row
-                            .goto(rule.lhs)
-                            .ok_or(LrParserError::MissingGoto(state, rule.lhs))?;
+                            .goto(state, &rule.lhs)
+                            .ok_or(LrParserError::MissingGoto(state, rule.lhs.to_owned()))?;
 
                         states.push(goto);
 
                         let reducer = self.reducers.get(*rule_id).unwrap();
                         reducer(rule, drained)
-                    };
+                    }?;
 
                     if ast.symbol_id() != rule.lhs.id {
                         return Err(LrParserError::UnexpectedSymbol {
-                            expected: rule.lhs.id,
+                            expected: rule.lhs.id.to_owned(),
                             got: ast.symbol_id().to_string(),
-                        });
+                        }
+                        .into());
                     }
 
                     stack.push(ast);
@@ -261,7 +260,7 @@ mod tests {
         let table = LrTable::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
 
         let mut lexer = lexer_fixture_lr0("1 + 1 * 0 * 1 * 1".chars());
-        let parser = LrParser::<AstNode<'_>>::new(
+        let parser = LrParser::<AstNode, _, _>::new(
             &FIXTURE_LR0_GRAMMAR,
             &table,
             &[
@@ -283,7 +282,7 @@ mod tests {
         let table = LrTable::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
 
         let mut lexer = lexer_fixture_lr1("n + n".chars());
-        let parser = LrParser::<AstNode<'_>>::new(
+        let parser = LrParser::<AstNode, _, _>::new(
             &FIXTURE_LR1_GRAMMAR,
             &table,
             &[

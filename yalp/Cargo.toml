@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 itertools = "0.12.1"
 prettytable-rs = "0.10.0"
+ruast = "0.0.5"

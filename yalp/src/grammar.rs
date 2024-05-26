@@ -1,5 +1,3 @@
-use crate::traits::IntoRef;
-
 use super::{RuleDef, Symbol};
 
 #[derive(Debug, Clone)]
@@ -25,28 +23,20 @@ pub type GrammarResult<'s, T> = Result<T, GrammarError<'s>>;
 
 pub mod traits {
 
-    use crate::{
-        traits::{IntoRef, SymbolSliceable},
-        Rule, RuleDef, Symbol,
-    };
+    use crate::{rule::traits::RuleDefSlice, traits::SymbolSlice, Rule};
 
-    pub trait Grammar<'sid, 'g>
-    where
-        'sid: 'g,
-        Self: 'g + AsRef<[RuleDef<'sid>]> + SymbolSliceable<'sid, 'g, 'g>,
-        &'g Self: IntoRef<'g, [Symbol<'sid>]>,
-    {
-        const NB_RULES: usize;
-        const NB_SYMBOLS: usize;
-
-        fn iter_rules(&'g self) -> impl Iterator<Item = Rule<'sid, 'g>> {
-            self.as_ref()
+    pub trait Grammar<'sid>: RuleDefSlice<'sid> + SymbolSlice<'sid> {
+        fn iter_rules<'a>(&'a self) -> impl Iterator<Item = Rule<'sid>> + 'a
+        where
+            'sid: 'a,
+        {
+            self.as_rule_def_slice()
                 .iter()
                 .enumerate()
-                .map(move |(rule_id, rule_def)| Rule {
-                    id: rule_id,
-                    lhs: self.sym(rule_def.lhs),
-                    rhs: rule_def.rhs.iter().map(|id| self.sym(*id)).collect(),
+                .map(move |(id, def)| Rule {
+                    id,
+                    lhs: self.sym(def.lhs),
+                    rhs: def.rhs.iter().map(|id| self.sym(id)).collect(),
                 })
         }
     }
@@ -107,12 +97,10 @@ impl<'sid, const NB_SYMBOLS: usize, const NB_RULES: usize> Grammar<'sid, NB_SYMB
     }
 }
 
-impl<'sid, 'g, const NB_SYMBOLS: usize, const NB_RULES: usize> IntoRef<'g, [Symbol<'sid>]>
-    for &'g Grammar<'sid, NB_SYMBOLS, NB_RULES>
-where
-    'sid: 'g,
+impl<'sid, const NB_SYMBOLS: usize, const NB_RULES: usize> AsRef<[Symbol<'sid>]>
+    for Grammar<'sid, NB_SYMBOLS, NB_RULES>
 {
-    fn into_ref(self) -> &'g [Symbol<'sid>] {
+    fn as_ref(&self) -> &[Symbol<'sid>] {
         &self.symbols
     }
 }
@@ -125,11 +113,9 @@ impl<'sid, const NB_SYMBOLS: usize, const NB_RULES: usize> AsRef<[RuleDef<'sid>]
     }
 }
 
-impl<'sid, 'g, const NB_SYMBOLS: usize, const NB_RULES: usize> traits::Grammar<'sid, 'g>
+impl<'sid, 'g, const NB_SYMBOLS: usize, const NB_RULES: usize> traits::Grammar<'sid>
     for Grammar<'sid, NB_SYMBOLS, NB_RULES>
 where
     'sid: 'g,
 {
-    const NB_RULES: usize = NB_RULES;
-    const NB_SYMBOLS: usize = NB_SYMBOLS;
 }

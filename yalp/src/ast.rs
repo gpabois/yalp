@@ -1,10 +1,12 @@
-use crate::{parser::traits::Ast, token::Token, AstIter, Rule};
+use std::convert::Infallible;
+
+use crate::{parser::traits::Ast, token::Token, AstIter, Rule, YalpError};
 
 #[derive(Debug)]
 pub struct AstNode<'kind> {
-    kind: &'kind str,
-    value: String,
-    children: Vec<AstNode<'kind>>,
+    pub kind: &'kind str,
+    pub value: String,
+    pub children: Vec<AstNode<'kind>>,
 }
 
 impl<'kind> AstNode<'kind> {
@@ -16,11 +18,11 @@ impl<'kind> AstNode<'kind> {
         }
     }
 
-    pub fn reduce<'a, 'c, 'd>(
-        rule: &'a Rule<'kind, 'c>,
-        children: AstIter<'d, AstNode<'kind>>,
-    ) -> AstNode<'kind> {
-        AstNode::new(rule.lhs.id, children)
+    pub fn reduce<'a, 'c>(
+        rule: &'a Rule<'kind>,
+        children: AstIter<'c, AstNode<'kind>>,
+    ) -> Result<AstNode<'kind>, YalpError<Infallible>> {
+        Ok(AstNode::new(rule.lhs.id, children))
     }
 }
 
