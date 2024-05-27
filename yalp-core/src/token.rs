@@ -11,6 +11,7 @@ pub struct Token<'kind> {
     pub kind: &'kind str,
     pub value: String,
     pub location: Span,
+    pub fragments: Vec<Token<'kind>>
 }
 
 impl<'kind> traits::Token for Token<'kind> {
@@ -20,7 +21,7 @@ impl<'kind> traits::Token for Token<'kind> {
 }
 
 impl<'kind> Token<'kind> {
-    pub fn new<S>(kind: &'kind str, value: S, location: Span) -> Self
+    pub fn new<S>(kind: &'kind str, value: S, location: Span, fragments: Vec<Self>) -> Self
     where
         S: ToString,
     {
@@ -28,6 +29,7 @@ impl<'kind> Token<'kind> {
             kind,
             value: value.to_string(),
             location,
+            fragments
         }
     }
 }

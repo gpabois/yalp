@@ -18,53 +18,79 @@ pub mod traits {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ActionKind {
+pub enum Action<'kind> {
+    /// Reconsume the current character
     Reconsume,
     Consume,
-    ConsumeAndReduce(&'static str),
-    Skip,
+    Write,
+    Push(&'kind str),
+    Merge(&'kind str, usize)
+
+}
+#[derive(Debug, Default)]
+pub struct ActionSequence<'kind> {
+    actions: Vec<Action<'kind>>,
+    goto: usize
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Action {
-    kind: ActionKind,
-    goto: usize,
-}
-
-impl Action {
-    pub fn reconsume(goto: usize) -> Self {
-        Action {
-            kind: ActionKind::Reconsume,
-            goto,
-        }
-    }
-
-    pub fn skip(goto: usize) -> Self {
+impl<'kind> ActionSequence<'kind> {
+    pub fn new(goto: usize) -> Self {
         Self {
-            kind: ActionKind::Skip,
-            goto,
+            actions: vec![],
+            goto
         }
     }
 
-    pub fn consume_and_reduce(kind: &'static str, goto: usize) -> Self {
-        Self {
-            kind: ActionKind::ConsumeAndReduce(kind),
-            goto,
-        }
+    pub fn act(mut self, action: Action<'kind>) -> Self {
+        self.actions.push(action);
+        self
+    }
+
+    pub fn reconsume(self) -> Self {
+        self.act(Action::Reconsume)
+    }
+
+    pub fn consume(self) -> Self {
+        self.act(Action::Consume)
+    }
+
+    pub fn write(self) -> Self {
+        self.act(Action::Write)
+    }
+
+    pub fn push(self, kind: &'kind str) -> Self {
+        self.act(Action::Push(kind))
+    }
+
+    pub fn merge(self, kind: &'kind str, n: usize) -> Self {
+        self.act(Action::Merge(kind, n))
     }
 }
 
-pub type State<Error> = fn(char) -> YalpResult<Action, Error>;
+impl<'kind> IntoIterator for ActionSequence<'kind> {
+    type Item = Action<'kind>;
+
+    type IntoIter = <Vec<Action<'kind>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.actions.into_iter()
+    }
+}
+
+pub type State<'kind, Error> = fn(char) -> YalpResult<ActionSequence<'kind>, Error>;
 
 pub struct Lexer<'kind, 'state, Stream, Error>
 where
     Stream: Iterator<Item = char>,
 {
     state: usize,
-    states: &'state [State<Error>],
+    states: &'state [State<'kind, Error>],
     span: Span,
     reconsume: Option<char>,
+    /// The current token's buffer
     buffer: String,
+    /// Fragmented tokens are intermediate results for complex tokenization
+    fragments: Vec<Token<'kind>>,
     stream: Stream,
     _phantom: PhantomData<(&'kind (), Error)>,
 }
@@ -84,7 +110,7 @@ impl<'kind, 'state, Stream, Error> Lexer<'kind, 'state, Stream, Error>
 where
     Stream: Iterator<Item = char>,
 {
-    pub fn new(states: &'state [State<Error>], stream: Stream) -> Self {
+    pub fn new(states: &'state [State<'kind, Error>], stream: Stream) -> Self {
         Self {
             state: 0,
             states,
@@ -92,9 +118,32 @@ where
             buffer: String::default(),
             reconsume: None,
             span: Span::default(),
+            fragments: vec![],
             _phantom: PhantomData,
         }
     }
+
+    /// Push the current buffer as a fragment
+    fn push(&mut self, kind: &'kind str) {
+        let token = Token::new(kind, self.take(), self.span(), vec![]);
+    }
+
+
+    /// Merge the n last fragments on the stack
+    fn merge(&mut self, kind: &'kind str, n: usize) {
+        let consume = self.fragments.len().saturating_sub(n);
+        let token = Token::new(
+            kind, 
+            self.take(), 
+            self.span(), 
+            self.fragments.drain(consume..).collect()
+        );
+    }
+
+    /// Write the TOS fragment in the output stream.
+    fn write(&mut self) -> Token<'kind> {
+        self.fragments.pop().unwrap()
+    }    
 
     fn next_char(&mut self) -> Option<char> {
         if self.reconsume.is_some() {
@@ -112,11 +161,11 @@ where
         })
     }
 
-    fn reconsume(&mut self, ch: char) {
+    pub fn reconsume(&mut self, ch: char) {
         self.reconsume = Some(ch);
     }
 
-    fn consume(&mut self, ch: char) {
+    pub fn consume(&mut self, ch: char) {
         self.buffer.push(ch)
     }
 
@@ -144,24 +193,18 @@ where
                 return Some(Err(action_result.unwrap_err()))
             }
 
-            let action = action_result.unwrap_or_else(|_| unreachable!());
+            let seq = action_result.unwrap_or_else(|_| unreachable!());
+            self.state = seq.goto;
 
-            match action.kind {
-                ActionKind::Reconsume => self.reconsume(ch),
-                ActionKind::Consume => self.consume(ch),
-                ActionKind::ConsumeAndReduce(kind) => {
-                    self.consume(ch);
-                    let value = self.take();
-                    return Some(Ok(Token {
-                        kind,
-                        value,
-                        location: self.span,
-                    }));
+            for action in seq {
+                match action {
+                    Action::Reconsume => self.reconsume(ch),
+                    Action::Consume => self.consume(ch),
+                    Action::Write => return self.fragments.pop().map(|f| Ok(f)),
+                    Action::Push(kind) => self.push(kind),
+                    Action::Merge(kind, n) => self.merge(kind, n),
                 }
-                ActionKind::Skip => {}
-            };
-
-            self.state = action.goto;
+            }
         }
 
         None
@@ -223,17 +266,17 @@ impl std::ops::AddAssign<NextColumn> for Span {
 
 #[cfg(test)]
 pub mod fixtures {
-    use crate::{YalpError, ErrorKind, NoCustomError, YalpResult};
+    use crate::{ActionSequence, ErrorKind, NoCustomError, YalpError, YalpResult};
 
     use super::{Action, Lexer, State};
 
-    fn lr0_root_state(ch: char) -> YalpResult<Action, NoCustomError> {
+    fn lr0_root_state(ch: char) -> YalpResult<ActionSequence<'static>, NoCustomError> {
         match ch {
-            '0' => Ok(Action::consume_and_reduce("0", 0)),
-            '1' => Ok(Action::consume_and_reduce("1", 0)),
-            '+' => Ok(Action::consume_and_reduce("+", 0)),
-            '*' => Ok(Action::consume_and_reduce("*", 0)),
-            ' ' => Ok(Action::skip(0)),
+            '0' => Ok(ActionSequence::new(0).consume().push("0").write()),
+            '1' => Ok(ActionSequence::new(0).consume().push("1").write()),
+            '+' => Ok(ActionSequence::new(0).consume().push("+").write()),
+            '*' => Ok(ActionSequence::new(0).consume().push("*").write()),
+            ' ' => Ok(ActionSequence::new(0)),
             _ => Err(
                 YalpError::new(
                     ErrorKind::unexpected_symbol(
@@ -257,13 +300,14 @@ pub mod fixtures {
         Lexer::new(LR0_LEXER_STATES, iter)
     }
 
-    fn lr1_root_state(ch: char) -> YalpResult<Action, NoCustomError> {
+    fn lr1_root_state(ch: char) -> YalpResult<ActionSequence<'static>, NoCustomError> {
         match ch {
-            '+' => Ok(Action::consume_and_reduce("+", 0)),
-            'n' => Ok(Action::consume_and_reduce("n", 0)),
-            '(' => Ok(Action::consume_and_reduce("(", 0)),
-            ')' => Ok(Action::consume_and_reduce(")", 0)),
-            ' ' => Ok(Action::skip(0)),
+            '+' => Ok(ActionSequence::new(0).consume().push("+").write()),
+            'n' => Ok(ActionSequence::new(0).consume().push("n").write()),
+            '(' => Ok(ActionSequence::new(0).consume().push("(").write()),
+            ')' => Ok(ActionSequence::new(0).consume().push(")").write()),
+            '0' => Ok(ActionSequence::new(0).consume()),
+            ' ' => Ok(ActionSequence::new(0)),
             _ => Err(
                 YalpError::new(
                     ErrorKind::unexpected_symbol(
@@ -286,6 +330,7 @@ pub mod fixtures {
     {
         Lexer::new(LR1_LEXER_STATES, iter)
     }
+
 }
 
 #[cfg(test)]
@@ -299,11 +344,11 @@ mod tests {
         let lexer = lexer_fixture_lr0("1 + 1 * 0".chars());
         let tokens = lexer.collect::<Result<Vec<_>, _>>().unwrap();
         let expected_tokens = vec![
-            Token::new("1", "1", Span::new(1, 1)),
-            Token::new("+", "+", Span::new(1, 3)),
-            Token::new("1", "1", Span::new(1, 5)),
-            Token::new("*", "*", Span::new(1, 7)),
-            Token::new("0", "0", Span::new(1, 9)),
+            Token::new("1", "1", Span::new(1, 1), vec![]),
+            Token::new("+", "+", Span::new(1, 3), vec![]),
+            Token::new("1", "1", Span::new(1, 5), vec![]),
+            Token::new("*", "*", Span::new(1, 7), vec![]),
+            Token::new("0", "0", Span::new(1, 9), vec![]),
         ];
 
         assert_eq!(tokens, expected_tokens);
