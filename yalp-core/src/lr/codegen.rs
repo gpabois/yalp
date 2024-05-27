@@ -1,6 +1,6 @@
 use ruast::{Array, Call, Expr, Lit, Path, PathSegment, Tuple};
 
-use crate::{grammar::traits::Grammar, traits::SymbolSlice};
+use crate::grammar::traits::Grammar;
 
 use super::{traits::LrTable, Action};
 
@@ -110,14 +110,14 @@ pub fn gen_action_value(action: &Action) -> Expr {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{fixtures::FIXTURE_LR1_GRAMMAR, LrTable};
+    use crate::{fixtures::FIXTURE_LR1_GRAMMAR, LrTable, NoCustomError};
 
     use super::codegen_table_value;
 
     #[test]
     fn test_codegen_table_value() {
         let grammar = &FIXTURE_LR1_GRAMMAR;
-        let table = LrTable::build::<0, _>(grammar).expect("cannot build table");
+        let table = LrTable::build::<0, _, NoCustomError>(grammar).expect("cannot build table");
 
         let ast = codegen_table_value(grammar, &table);
         println!("{ast}");

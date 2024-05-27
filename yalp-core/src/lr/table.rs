@@ -1,14 +1,17 @@
 use prettytable::Table as PtTable;
 use std::collections::HashMap;
 
-use crate::{grammar::traits::Grammar, traits::SymbolSlice as _, ItemSetId, RuleSet, Symbol};
+use crate::{grammar::traits::Grammar, traits::SymbolSlice as _, ErrorKind, ItemSetId, RuleSet, Symbol, YalpError, YalpResult};
 
-use super::{Action, Graph, LrParserError, LrResult, Transition};
+use super::{Action, Graph, Transition};
 
 pub mod traits {
     use crate::{lr::Action, Symbol};
 
     pub trait LrTable {
+        fn iter_terminals<'a>(&'a self, state: usize) -> impl Iterator<Item=Symbol> + 'a;
+        fn iter_non_terminals<'a>(&'a self, state: usize) -> impl Iterator<Item=Symbol> + 'a;
+
         fn action<'a, 'b>(&'a self, state: usize, symbol: &Symbol<'b>) -> Option<&'a Action>
         where
             'b: 'a;
@@ -47,13 +50,21 @@ impl<'sid> Row<'sid> {
     pub fn goto(&self, symbol: &Symbol<'sid>) -> Option<ItemSetId> {
         self.goto.get(symbol).copied()
     }
+
+    pub fn iter_terminals<'a>(&'a self) -> impl Iterator<Item=Symbol<'sid>> +'a {
+        self.actions.keys().cloned()
+    }
+
+    pub fn iter_nonterminals<'a>(&'a self) -> impl Iterator<Item=Symbol<'sid>> +'a {
+        self.goto.keys().cloned()
+    }
 }
 
 impl<'sid> Row<'sid> {
-    fn from_transition_lr1<const K: usize>(
+    fn from_transition_lr1<const K: usize, Error>(
         transition: Transition<'sid, '_, '_, K>,
         symbols: &[Symbol<'sid>],
-    ) -> LrResult<Self> {
+    ) -> YalpResult<Self, Error> {
         let mut actions = HashMap::<Symbol<'sid>, Action>::default();
         let mut goto = HashMap::<Symbol<'sid>, ItemSetId>::default();
 
@@ -69,11 +80,11 @@ impl<'sid> Row<'sid> {
         {
             // Shift/reduce conflict
             if actions.contains_key(&sym) && matches!(actions[&sym], Action::Reduce(_)) {
-                return Err(LrParserError::ShiftReduceConflict {
+                return Err(YalpError::new(ErrorKind::ShiftReduceConflict {       
                     state: transition.from.id,
                     symbol: sym.to_owned(),
-                    conflict: [action, actions[&sym]],
-                });
+                    conflict: [action, actions[&sym]], 
+                }, None));
             }
 
             actions.insert(sym, action);
@@ -97,10 +108,10 @@ impl<'sid> Row<'sid> {
         Ok(Self::new(actions, goto))
     }
 
-    fn from_transition_lr0<const K: usize>(
+    fn from_transition_lr0<const K: usize, Error>(
         transition: Transition<'sid, '_, '_, K>,
         symbols: &[Symbol<'sid>],
-    ) -> LrResult<Self> {
+    ) -> YalpResult<Self, Error> {
         let mut actions = HashMap::<Symbol<'sid>, Action>::default();
         let mut goto = HashMap::<Symbol<'sid>, ItemSetId>::default();
 
@@ -114,11 +125,11 @@ impl<'sid> Row<'sid> {
         {
             // Shift/reduce conflict
             if actions.contains_key(&sym) && matches!(actions[&sym], Action::Reduce(_)) {
-                return Err(LrParserError::ShiftReduceConflict {
+                return Err(YalpError::new(ErrorKind::ShiftReduceConflict {       
                     state: transition.from.id,
                     symbol: sym.to_owned(),
-                    conflict: [action, actions[&sym]],
-                });
+                    conflict: [action, actions[&sym]], 
+                }, None));
             }
 
             actions.insert(sym, action);
@@ -147,16 +158,16 @@ impl<'sid> Row<'sid> {
 
         Ok(Self::new(actions, goto))
     }
-    pub fn from_transition<const K: usize>(
+    pub fn from_transition<const K: usize, Error>(
         transition: Transition<'sid, '_, '_, K>,
         symbols: &[Symbol<'sid>],
-    ) -> LrResult<Self> {
+    ) -> YalpResult<Self, Error> {
         if K == 0 {
             Self::from_transition_lr0(transition, symbols)
         } else if K == 1 {
             Self::from_transition_lr1(transition, symbols)
         } else {
-            Err(LrParserError::UnsupportedLrRank)
+            Err(YalpError::new(ErrorKind::UnsupportedAlgorithm, None))
         }
     }
 }
@@ -229,6 +240,16 @@ impl traits::LrTable for LrTable<'_, '_> {
     fn len(&self) -> usize {
         self.rows.len()
     }
+    
+    fn iter_terminals<'a>(&'a self, state: usize) -> impl Iterator<Item=Symbol> +'a {
+        let row = &self.rows[state];
+        row.iter_terminals()
+   }
+    
+    fn iter_non_terminals<'a>(&'a self, state: usize) -> impl Iterator<Item=Symbol> +'a {
+        let row = &self.rows[state];
+        row.iter_nonterminals()
+    }
 }
 
 impl<'sid, 'sym> LrTable<'sid, 'sym>
@@ -239,25 +260,21 @@ where
         self.rows.iter()
     }
 
-    pub fn get(&self, state_id: usize) -> Option<&Row<'sid>> {
-        self.rows.get(state_id)
-    }
-
-    fn from_graph<const K: usize>(
+    fn from_graph<const K: usize, Error>(
         graph: &Graph<'sid, 'sym, '_, K>,
         symbols: &'sym [Symbol<'sid>],
-    ) -> LrResult<Self> {
+    ) -> YalpResult<Self, Error> {
         Ok(Self {
             symbols,
             rows: graph
                 .iter_transitions()
                 .map(|t| Row::from_transition(t, symbols))
-                .collect::<LrResult<Vec<_>>>()?,
+                .collect::<YalpResult<Vec<_>, Error>>()?,
         })
     }
 
     /// Build a LR Table parser from a grammar.
-    pub fn build<const K: usize, G>(grammar: &'sym G) -> LrResult<Self>
+    pub fn build<const K: usize, G, Error>(grammar: &'sym G) -> YalpResult<Self, Error>
     where
         G: Grammar<'sid>,
     {
@@ -270,32 +287,28 @@ where
     }
 }
 
-/// Module to generate static tables.
-pub mod codegen {
-    use crate::{lr::Action, Symbol};
+pub struct ConstLrTableRow<const NB_TERMS: usize, const NB_NTERMS: usize> {
+    actions: [(&'static str, Option<Action>); NB_TERMS],
+    goto: [(&'static str, Option<usize>); NB_NTERMS],
+}
 
-    pub struct LrTableRow<const NB_TERMS: usize, const NB_NTERMS: usize> {
-        actions: [(&'static str, Option<Action>); NB_TERMS],
-        goto: [(&'static str, Option<usize>); NB_NTERMS],
+impl<const NB_TERMS: usize, const NB_NTERMS: usize> ConstLrTableRow<NB_TERMS, NB_NTERMS> {
+
+    pub fn action<'a, 'b>(&'a self, symbol: &Symbol<'b>) -> Option<&'a Action> {
+        self.actions
+            .iter()
+            .find(|(id, _)| symbol.id == *id)
+            .and_then(|(_, act)| act.as_ref())
     }
 
-    impl<const NB_TERMS: usize, const NB_NTERMS: usize> LrTableRow<NB_TERMS, NB_NTERMS> {
-        pub fn action<'a, 'b>(&'a self, symbol: &Symbol<'b>) -> Option<&'a Action> {
-            self.actions
-                .iter()
-                .find(|(id, _)| symbol.id == *id)
-                .and_then(|(_, act)| act.as_ref())
-        }
-
-        pub fn goto(&self, symbol: &Symbol<'_>) -> Option<usize> {
-            self.goto
-                .iter()
-                .find(|(id, _)| symbol.id == *id)
-                .and_then(|(_, goto)| *goto)
-        }
+    pub fn goto(&self, symbol: &Symbol<'_>) -> Option<usize> {
+        self.goto
+            .iter()
+            .find(|(id, _)| symbol.id == *id)
+            .and_then(|(_, goto)| *goto)
     }
+}
 
-    pub struct LrTable<const NB_STATES: usize, const NB_TERMS: usize, const NB_NTERMS: usize> {
-        rows: [LrTableRow<NB_TERMS, NB_NTERMS>; NB_STATES],
-    }
+pub struct ConstLrTable<const NB_STATES: usize, const NB_TERMS: usize, const NB_NTERMS: usize> {
+    rows: [ConstLrTableRow<NB_TERMS, NB_NTERMS>; NB_STATES],
 }

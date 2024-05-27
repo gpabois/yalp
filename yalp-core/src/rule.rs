@@ -1,23 +1,73 @@
-use std::{hash::Hash, vec::Drain};
+use std::{hash::Hash, marker::PhantomData, vec::Drain};
 
 use itertools::Itertools;
 
-use crate::{grammar::traits::Grammar, YalpError};
+use crate::{grammar::traits::Grammar, YalpResult};
 
 use super::Symbol;
 
 /// The rule's identifier in the grammar.
 pub type RuleId = usize;
 
-/// An iterator over all RHS nodes.
-pub type AstIter<'a, Ast> = Drain<'a, Ast>;
+/// An iterator over all right-hand side nodes.
+pub struct RuleRhs<'a, Ast>(Drain<'a, Ast>);
+
+impl<'a, Ast> From<Drain<'a, Ast>> for RuleRhs<'a, Ast> {
+    fn from(value: Drain<'a, Ast>) -> Self {
+        Self(value)
+    }
+}
+
+impl<'a, Ast> Iterator for RuleRhs<'a, Ast> {
+    type Item = Ast;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
 
 /// A rule reducer
-pub type RuleReducer<Ast, Error> =
-    for<'a, 'b, 'c> fn(&'a Rule<'b>, AstIter<'c, Ast>) -> Result<Ast, YalpError<Error>>;
+pub struct RuleReducer<'kind, Ast, Error, Func> 
+where Func: Fn(&Rule<'kind>, RuleRhs<Ast>) -> YalpResult<Ast, Error>
+{
+    f: Func,
+    _phantom: PhantomData<&'kind (Ast, Error)>
+}
+
+pub type ConstRuleReducer<'kind, Ast, Error> = RuleReducer<'kind, Ast, Error, RuleReducerFunc<'kind, Ast, Error>>;
+
+impl<'kind, Ast, Error, Func> RuleReducer<'kind, Ast, Error, Func> 
+where Func: Fn(&Rule<'kind>,RuleRhs<Ast>) -> YalpResult<Ast, Error>
+{
+    pub const fn new(f: Func) -> Self {
+        Self {
+            f,
+            _phantom: PhantomData
+        }
+    }
+}
+
+impl<'kind, Ast, Error, Func> traits::RuleReducer<'kind, Error> for RuleReducer<'kind, Ast, Error, Func> 
+where Func: Fn(&Rule<'kind>,RuleRhs<Ast>) -> YalpResult<Ast, Error>
+{
+    type Ast = Ast;
+
+    fn reduce(&self, rule: &Rule<'kind>, rhs: RuleRhs<Self::Ast>) -> YalpResult<Self::Ast, Error> {
+        (self.f)(rule, rhs)
+    }
+}
+
+pub type RuleReducerFunc<'kind, Ast, Error> = fn(&Rule<'kind>, RuleRhs<Ast>) -> YalpResult<Ast, Error>;
 
 pub mod traits {
     use crate::RuleDef;
+    use crate::{Rule, RuleRhs, YalpResult};
+
+    pub trait RuleReducer<'kind, Error> {
+        type Ast;
+
+        fn reduce<'a, 'b, 'c>(&self, rule: &Rule<'kind>, rhs: RuleRhs<Self::Ast>) -> YalpResult<Self::Ast, Error>;
+    }
 
     pub trait RuleDefSlice<'sid>: AsRef<[RuleDef<'sid>]> {
         fn as_rule_def_slice(&self) -> &[RuleDef<'sid>];

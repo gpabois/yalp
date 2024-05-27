@@ -1,68 +1,31 @@
 use std::marker::PhantomData;
 
-use crate::token::Token;
+use crate::{token::Token, YalpResult};
 
-#[derive(Debug, Clone)]
-pub enum LexerErrorKind {
-    UnexpectedEndOfStream,
-    UnexpectedChar(char),
-}
-
-impl std::fmt::Display for LexerErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LexerErrorKind::UnexpectedEndOfStream => write!(f, "unexpected end of stream"),
-            LexerErrorKind::UnexpectedChar(c) => write!(f, "unexpected char '{}'", c),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct LexerError {
-    location: Span,
-    kind: LexerErrorKind,
-}
-
-impl LexerError {
-    pub fn unexpected_end_of_stream(location: Span) -> Self {
-        Self {
-            location,
-            kind: LexerErrorKind::UnexpectedEndOfStream,
-        }
-    }
-}
-
-impl std::fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} at line={}, col={}",
-            self.kind, self.location.line, self.location.column
-        )
-    }
-}
-
-pub type LexerResult<T> = Result<T, LexerError>;
+use self::traits::Lexer as _;
 
 pub mod traits {
-    use crate::token::traits::Token;
+    use crate::{token::traits::Token, YalpResult};
 
-    use super::{LexerResult, Span};
+    use super::Span;
 
     /// The trait for a Lexer.
-    pub trait Lexer: Iterator<Item = LexerResult<Self::Token>> {
+    pub trait Lexer<Error>: Iterator<Item = YalpResult<Self::Token, Error>> {
         type Token: Token;
 
         fn span(&self) -> Span;
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum ActionKind {
     Reconsume,
     Consume,
     ConsumeAndReduce(&'static str),
     Skip,
 }
+
+#[derive(Debug, Clone, Copy)]
 pub struct Action {
     kind: ActionKind,
     goto: usize,
@@ -91,44 +54,44 @@ impl Action {
     }
 }
 
-pub type State = fn(char) -> Result<Action, LexerErrorKind>;
+pub type State<Error> = fn(char) -> YalpResult<Action, Error>;
 
-pub struct Lexer<'kind, 'state, Stream>
+pub struct Lexer<'kind, 'state, Stream, Error>
 where
     Stream: Iterator<Item = char>,
 {
     state: usize,
-    states: &'state [State],
-    current_location: Span,
+    states: &'state [State<Error>],
+    span: Span,
     reconsume: Option<char>,
     buffer: String,
     stream: Stream,
-    _phantom: PhantomData<&'kind ()>,
+    _phantom: PhantomData<(&'kind (), Error)>,
 }
 
-impl<'kind, 'state, Stream> traits::Lexer for Lexer<'kind, 'state, Stream>
+impl<'kind, 'state, Stream, Error> traits::Lexer<Error> for Lexer<'kind, 'state, Stream, Error>
 where
     Stream: Iterator<Item = char>,
 {
     type Token = Token<'kind>;
 
     fn span(&self) -> Span {
-        self.current_location
+        self.span
     }
 }
 
-impl<'kind, 'state, Stream> Lexer<'kind, 'state, Stream>
+impl<'kind, 'state, Stream, Error> Lexer<'kind, 'state, Stream, Error>
 where
     Stream: Iterator<Item = char>,
 {
-    pub fn new(states: &'state [State], stream: Stream) -> Self {
+    pub fn new(states: &'state [State<Error>], stream: Stream) -> Self {
         Self {
             state: 0,
             states,
             stream,
             buffer: String::default(),
             reconsume: None,
-            current_location: Span::default(),
+            span: Span::default(),
             _phantom: PhantomData,
         }
     }
@@ -142,9 +105,9 @@ where
 
         self.stream.next().inspect(|&ch| {
             if ch == '\n' {
-                self.current_location += NextLine;
+                self.span += NextLine;
             } else {
-                self.current_location += NextColumn;
+                self.span += NextColumn;
             }
         })
     }
@@ -162,26 +125,26 @@ where
     }
 }
 
-impl<'kind, 'state, Stream> Iterator for Lexer<'kind, 'state, Stream>
+impl<'kind, 'state, Stream, Error> Iterator for Lexer<'kind, 'state, Stream, Error>
 where
     Stream: Iterator<Item = char>,
 {
-    type Item = LexerResult<Token<'kind>>;
+    type Item = YalpResult<Token<'kind>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let state = self.states[self.state];
 
         while let Some(ch) = self.next_char() {
-            let action_result = state(ch).map_err(|kind| LexerError {
-                kind,
-                location: self.current_location,
+            let action_result = state(ch).map_err(|mut err| {
+                err.span = Some(self.span());
+                err
             });
 
-            if let Err(err) = action_result {
-                return Some(Err(err));
+            if action_result.is_err() {
+                return Some(Err(action_result.unwrap_err()))
             }
 
-            let action = action_result.unwrap();
+            let action = action_result.unwrap_or_else(|_| unreachable!());
 
             match action.kind {
                 ActionKind::Reconsume => self.reconsume(ch),
@@ -192,7 +155,7 @@ where
                     return Some(Ok(Token {
                         kind,
                         value,
-                        location: self.current_location,
+                        location: self.span,
                     }));
                 }
                 ActionKind::Skip => {}
@@ -260,48 +223,64 @@ impl std::ops::AddAssign<NextColumn> for Span {
 
 #[cfg(test)]
 pub mod fixtures {
-    use super::{Action, Lexer, LexerErrorKind, State};
+    use crate::{YalpError, ErrorKind, NoCustomError, YalpResult};
 
-    fn lr0_root_state(c: char) -> Result<Action, LexerErrorKind> {
-        match c {
+    use super::{Action, Lexer, State};
+
+    fn lr0_root_state(ch: char) -> YalpResult<Action, NoCustomError> {
+        match ch {
             '0' => Ok(Action::consume_and_reduce("0", 0)),
             '1' => Ok(Action::consume_and_reduce("1", 0)),
             '+' => Ok(Action::consume_and_reduce("+", 0)),
             '*' => Ok(Action::consume_and_reduce("*", 0)),
             ' ' => Ok(Action::skip(0)),
-            _ => Err(LexerErrorKind::UnexpectedChar(c)),
+            _ => Err(
+                YalpError::new(
+                    ErrorKind::unexpected_symbol(
+                    &ch.to_string(), 
+                    vec!["0", "1", "*", " "]
+                    )
+                , None
+            )),
         }
     }
 
-    static LR0_LEXER_STATES: &[State] = &[
+    static LR0_LEXER_STATES: &[State<NoCustomError>] = &[
         // 0 : root
         lr0_root_state,
     ];
 
-    pub fn lexer_fixture_lr0<I>(iter: I) -> Lexer<'static, 'static, I>
+    pub fn lexer_fixture_lr0<I>(iter: I) -> Lexer<'static, 'static, I, NoCustomError>
     where
         I: Iterator<Item = char>,
     {
         Lexer::new(LR0_LEXER_STATES, iter)
     }
 
-    fn lr1_root_state(c: char) -> Result<Action, LexerErrorKind> {
-        match c {
+    fn lr1_root_state(ch: char) -> YalpResult<Action, NoCustomError> {
+        match ch {
             '+' => Ok(Action::consume_and_reduce("+", 0)),
             'n' => Ok(Action::consume_and_reduce("n", 0)),
             '(' => Ok(Action::consume_and_reduce("(", 0)),
             ')' => Ok(Action::consume_and_reduce(")", 0)),
             ' ' => Ok(Action::skip(0)),
-            _ => Err(LexerErrorKind::UnexpectedChar(c)),
+            _ => Err(
+                YalpError::new(
+                    ErrorKind::unexpected_symbol(
+                    &ch.to_string(), 
+                    vec!["0", "1", "*", " "]
+                    )
+                , None
+            )),
         }
     }
 
-    static LR1_LEXER_STATES: &[State] = &[
+    static LR1_LEXER_STATES: &[State<NoCustomError>] = &[
         // 0 : root
         lr1_root_state,
     ];
 
-    pub fn lexer_fixture_lr1<I>(iter: I) -> Lexer<'static, 'static, I>
+    pub fn lexer_fixture_lr1<I>(iter: I) -> Lexer<'static, 'static, I, NoCustomError>
     where
         I: Iterator<Item = char>,
     {

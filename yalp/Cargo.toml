@@ -1,11 +1,13 @@
 [package]
 name = "yalp"
+description = "Yet Another Lexer and Parser library"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/gpabois/yalp"
+authors = ["Gaël Pabois"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-itertools = "0.12.1"
-prettytable-rs = "0.10.0"
-ruast = "0.0.5"
+yalp-core = { path="../yalp-core" }
+yalp-macros = {path = "../yalp-macros" }

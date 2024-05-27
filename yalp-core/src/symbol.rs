@@ -134,7 +134,7 @@ impl<'s> Hash for Symbol<'s> {
 }
 
 pub mod traits {
-    use crate::Symbol;
+    use crate::{Symbol, YalpResult};
 
     /// A trait to implement common methods for object holding symbols.
     pub trait SymbolSlice<'sid>
@@ -175,6 +175,11 @@ pub mod traits {
 
         fn get_symbol_by_id(&self, id: &str) -> Option<Symbol<'sid>> {
             self.as_ref().iter().find(|sym| sym.id == id).copied()
+        }
+
+        fn try_get_symbol_by_id<C>(&self, id: &str) -> YalpResult<Symbol<'sid>, C> {
+            self.get_symbol_by_id(id)
+            .ok_or_else(|| crate::YalpError::new(crate::ErrorKind::unknown_symbol(id), None))
         }
 
         fn iter_terminals<'a>(&'a self) -> impl Iterator<Item = Symbol<'sid>> + 'a

@@ -1,21 +1,38 @@
 use lazy_static::lazy_static;
+use quote::quote;
 use proc_macro2::{Group, Ident, TokenStream};
-use yalp::{
-    lr::LrTable,
-    traits::{Ast as _, Parser as _, Token as _},
-    AstIter, Grammar, LrParser, LrParserError, Rule, RuleDef, RuleReducer, Symbol, YalpError, EOS,
-    START,
+use yalp_core::{
+    lr::LrTable, traits::{Ast as _, Parser as _, Token as _}, ConstRuleReducer, ConstGrammar, LrParser, Rule, RuleDef, RuleReducer, RuleRhs, Symbol, YalpError, YalpResult, EOS, START
 };
 
-use crate::{lexer::Lexer, parse_symbol_ident_set, Error, SymbolIdentSet, Token};
+use crate::{lexer::Lexer, parse_symbol_ident_set, rule::parse_rule_set, Error, RuleSet, SymbolIdentSet, Token};
 
 #[derive(Debug, Default)]
 pub struct GrammarInput {
     terminals: SymbolIdentSet,
     non_terminals: SymbolIdentSet,
+    rules: RuleSet
 }
 
-const GRAMMAR: Grammar<'static, 9, 4> = yalp::Grammar::new(
+impl GrammarInput {
+    pub fn into_token_stream(&self) -> TokenStream {
+        let symbols = [
+            quote!{yalp::Symbol::start()},
+            quote!{yalp::Symbol::eos()},
+            quote!{yalp::Symbol::epsilon()}
+        ].into_iter()
+        .chain(self.terminals.0.iter().map(|s| quote!{yalp::Symbol::term(#s)}))
+        .chain(self.non_terminals.0.iter().map(|s| quote!{yalp::Symbol::nterm(#s)}));
+
+        let rules = self.rules.into_token_stream();
+
+        quote! {
+            yalp::ConstGrammar::new([#(#symbols),*], #rules)
+        }.into()
+    }
+}
+
+const GRAMMAR: ConstGrammar<'static, 9, 4> = yalp_core::ConstGrammar::new(
     [
         Symbol::start(),
         Symbol::eos(),
@@ -36,8 +53,8 @@ const GRAMMAR: Grammar<'static, 9, 4> = yalp::Grammar::new(
 );
 
 lazy_static! {
-    static ref TABLE: Result<LrTable<'static, 'static>, LrParserError> =
-        LrTable::build::<1, _>(&GRAMMAR);
+    static ref TABLE: YalpResult<LrTable<'static, 'static>, Error> =
+        LrTable::build::<1, _, _>(&GRAMMAR);
 }
 
 #[derive(Debug)]
@@ -71,7 +88,7 @@ impl TryFrom<Ast> for Token {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::Token(tok) => Ok(tok),
-            _ => Err(Self::Error::wrong_symbol("<token>", value.symbol_id())),
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol("<token>", [value.symbol_id()]).into()),
         }
     }
 }
@@ -100,7 +117,7 @@ impl TryFrom<Ast> for Attribute {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::Attribute(attr) => Ok(attr),
-            _ => Err(Self::Error::wrong_symbol("<attribute>", value.symbol_id())),
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol("<attribute>", [value.symbol_id()]).into()),
         }
     }
 }
@@ -111,12 +128,12 @@ impl TryFrom<Ast> for GrammarInput {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::Grammar(grammar) => Ok(grammar),
-            _ => Err(Self::Error::wrong_symbol("<grammar>", value.symbol_id())),
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol("<grammar>", [value.symbol_id()]).into()),
         }
     }
 }
 
-impl yalp::traits::Ast for Ast {
+impl yalp_core::traits::Ast for Ast {
     fn symbol_id(&self) -> &str {
         match self {
             Self::Token(tok) => tok.symbol_id(),
@@ -133,7 +150,7 @@ impl From<Token> for Ast {
 }
 
 /// 1. START => <grammar> EOS
-fn r1(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r1(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     Ok(lhs.next().unwrap())
 }
 
@@ -145,7 +162,9 @@ fn merge(grammar: &mut GrammarInput, attr: Attribute) -> Result<(), YalpError<Er
         "non_terminals" => {
             grammar.non_terminals = parse_symbol_ident_set(attr.group.stream())?;
         }
-
+        "rules" => {
+            grammar.rules = parse_rule_set(attr.group.stream())?
+        }
         _ => {}
     };
 
@@ -153,7 +172,7 @@ fn merge(grammar: &mut GrammarInput, attr: Attribute) -> Result<(), YalpError<Er
 }
 
 /// 2. <grammar> => <grammar> , <attribute>
-fn r2(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r2(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let mut grammar: GrammarInput = lhs.next().unwrap().try_into()?;
     lhs.next();
 
@@ -164,7 +183,7 @@ fn r2(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
 }
 
 /// 3. <grammar> => <attribute>
-fn r3(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r3(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let attr: Attribute = lhs.next().unwrap().try_into()?;
     let mut grammar = GrammarInput::default();
     merge(&mut grammar, attr)?;
@@ -172,7 +191,7 @@ fn r3(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
 }
 
 /// 4. <attribute> => <ident> : <group>
-fn r4(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r4(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let ident: Ident = lhs.next().unwrap().try_into()?;
     lhs.next();
     let group: Group = lhs.next().unwrap().try_into()?;
@@ -184,7 +203,12 @@ fn r4(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     .into())
 }
 
-const REDUCERS: &[RuleReducer<Ast, Error>] = &[r1, r2, r3, r4];
+const REDUCERS: &[ConstRuleReducer<Ast, Error>] = &[
+    RuleReducer::new(r1), 
+    RuleReducer::new(r2), 
+    RuleReducer::new(r3), 
+    RuleReducer::new(r4)
+];
 
 pub fn parse_grammar(stream: TokenStream) -> Result<GrammarInput, YalpError<Error>> {
     let mut lexer = Lexer::new(stream);

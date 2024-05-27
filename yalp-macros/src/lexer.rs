@@ -1,12 +1,12 @@
 use proc_macro2::{Group, Ident, Literal, TokenStream, TokenTree};
-use yalp::{lexer::LexerResult, traits::Token as _, YalpError};
+use yalp_core::{traits::Token as _, YalpError, YalpResult};
 
 use crate::Error;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Token(TokenTree);
 
-impl yalp::token::traits::Token for Token {
+impl yalp_core::token::traits::Token for Token {
     fn symbol_id(&self) -> &str {
         match &self.0 {
             TokenTree::Group(_) => "<group>",
@@ -14,6 +14,8 @@ impl yalp::token::traits::Token for Token {
             TokenTree::Punct(punct) => match punct.to_string().as_str() {
                 ":" => ":",
                 "," => ",",
+                ";" => ";",
+                "=" => "=",
                 ">" => ">",
                 "<" => "<",
                 "-" => "-",
@@ -30,7 +32,7 @@ impl TryFrom<Token> for Group {
     fn try_from(value: Token) -> Result<Self, Self::Error> {
         match value.0 {
             TokenTree::Group(group) => Ok(group),
-            _ => Err(Self::Error::wrong_symbol("<group>", value.symbol_id())),
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol("<group>", [value.symbol_id()]).into()),
         }
     }
 }
@@ -41,7 +43,7 @@ impl TryFrom<Token> for Ident {
     fn try_from(value: Token) -> Result<Self, Self::Error> {
         match value.0 {
             TokenTree::Ident(ident) => Ok(ident),
-            _ => Err(Self::Error::wrong_symbol("<ident>", value.symbol_id())),
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol("<ident>", [value.symbol_id()]).into()),
         }
     }
 }
@@ -52,13 +54,13 @@ impl TryFrom<Token> for Literal {
     fn try_from(value: Token) -> Result<Self, Self::Error> {
         match value.0 {
             TokenTree::Literal(lit) => Ok(lit),
-            _ => Err(Self::Error::wrong_symbol("<lit>", value.symbol_id())),
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol("<lit>", [value.symbol_id()]).into()),
         }
     }
 }
 
 pub(crate) struct Lexer {
-    current_span: yalp::Span,
+    current_span: yalp_core::Span,
     stream: proc_macro2::token_stream::IntoIter,
 }
 
@@ -66,25 +68,25 @@ impl Lexer {
     pub fn new(stream: TokenStream) -> Self {
         Self {
             stream: stream.into_iter(),
-            current_span: yalp::Span::default(),
+            current_span: yalp_core::Span::default(),
         }
     }
 }
 
 impl Iterator for Lexer {
-    type Item = LexerResult<Token>;
+    type Item = YalpResult<Token, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let tt = self.stream.next()?;
-        self.current_span = yalp::Span::new(0, 0);
+        self.current_span = yalp_core::Span::new(0, 0);
         Some(Ok(Token(tt)))
     }
 }
 
-impl yalp::traits::Lexer for Lexer {
+impl yalp_core::traits::Lexer<Error> for Lexer {
     type Token = Token;
 
-    fn span(&self) -> yalp::Span {
+    fn span(&self) -> yalp_core::Span {
         self.current_span
     }
 }

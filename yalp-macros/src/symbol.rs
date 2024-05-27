@@ -1,49 +1,48 @@
 use lazy_static::lazy_static;
 use proc_macro2::{Ident, Literal, TokenStream};
+use quote::quote;
 
 use crate::{Error, Lexer, Token};
-use yalp::{
-    lr::LrTable,
-    traits::{Ast as _, Parser as _, Token as _},
-    AstIter, LrParser, LrParserError, Rule, RuleReducer, YalpError, EOS, START,
+use yalp_core::{
+    lr::LrTable, traits::{Ast as _, Parser as _, Token as _}, ConstRuleReducer, LrParser, Rule, RuleReducer, RuleRhs, YalpError, YalpResult, EOS, START
 };
 
 #[derive(Debug, Default)]
-pub struct SymbolIdentSet(Vec<String>);
+pub struct SymbolIdentSet(pub Vec<String>);
 
-const GRAMMAR: yalp::Grammar<'static, 12, 8> = yalp::Grammar::new(
+const GRAMMAR: yalp_core::ConstGrammar<'static, 12, 8> = yalp_core::ConstGrammar::new(
     [
-        yalp::Symbol::start(),
-        yalp::Symbol::eos(),
-        yalp::Symbol::epsilon(),
-        yalp::Symbol::term("<"),
-        yalp::Symbol::term(">"),
-        yalp::Symbol::term(","),
-        yalp::Symbol::term("-"),
-        yalp::Symbol::term("<ident>"),
-        yalp::Symbol::term("<lit>"),
-        yalp::Symbol::nterm("<symbol-ident-set>"),
-        yalp::Symbol::nterm("<symbol-ident>"),
-        yalp::Symbol::nterm("<ident-chain>"),
+        yalp_core::Symbol::start(),
+        yalp_core::Symbol::eos(),
+        yalp_core::Symbol::epsilon(),
+        yalp_core::Symbol::term("<"),
+        yalp_core::Symbol::term(">"),
+        yalp_core::Symbol::term(","),
+        yalp_core::Symbol::term("-"),
+        yalp_core::Symbol::term("<ident>"),
+        yalp_core::Symbol::term("<lit>"),
+        yalp_core::Symbol::nterm("<symbol-ident-set>"),
+        yalp_core::Symbol::nterm("<symbol-ident>"),
+        yalp_core::Symbol::nterm("<ident-chain>"),
     ],
     [
-        yalp::RuleDef::new(START, &["<symbol-ident-set>", EOS]),
-        yalp::RuleDef::new(
+        yalp_core::RuleDef::new(START, &["<symbol-ident-set>", EOS]),
+        yalp_core::RuleDef::new(
             "<symbol-ident-set>",
             &["<symbol-ident-set>", ",", "<symbol-ident>"],
         ),
-        yalp::RuleDef::new("<symbol-ident-set>", &["<symbol-ident>"]),
-        yalp::RuleDef::new("<symbol-ident>", &["<ident-chain>"]),
-        yalp::RuleDef::new("<symbol-ident>", &["<lit>"]),
-        yalp::RuleDef::new("<symbol-ident>", &["<", "<ident-chain>", ">"]),
-        yalp::RuleDef::new("<ident-chain>", &["<ident-chain>", "-", "<ident>"]),
-        yalp::RuleDef::new("<ident-chain>", &["<ident>"]),
+        yalp_core::RuleDef::new("<symbol-ident-set>", &["<symbol-ident>"]),
+        yalp_core::RuleDef::new("<symbol-ident>", &["<ident-chain>"]),
+        yalp_core::RuleDef::new("<symbol-ident>", &["<lit>"]),
+        yalp_core::RuleDef::new("<symbol-ident>", &["<", "<ident-chain>", ">"]),
+        yalp_core::RuleDef::new("<ident-chain>", &["<ident-chain>", "-", "<ident>"]),
+        yalp_core::RuleDef::new("<ident-chain>", &["<ident>"]),
     ],
 );
 
 lazy_static! {
-    static ref TABLE: Result<LrTable<'static, 'static>, LrParserError> =
-        LrTable::build::<0, _>(&GRAMMAR);
+    static ref TABLE: YalpResult<LrTable<'static, 'static>, Error> =
+        LrTable::build::<0, _, _>(&GRAMMAR);
 }
 
 struct SymbolIdent(String);
@@ -63,10 +62,10 @@ impl TryFrom<Ast> for SymbolIdentSet {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::SymbolIdentSet(set) => Ok(set),
-            _ => Err(Self::Error::wrong_symbol(
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol(
                 "<symbol-ident-set>",
-                value.symbol_id(),
-            )),
+                [value.symbol_id()],
+            ).into()),
         }
     }
 }
@@ -77,10 +76,10 @@ impl TryFrom<Ast> for SymbolIdent {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::SymbolIdent(chain) => Ok(chain),
-            _ => Err(Self::Error::wrong_symbol(
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol(
                 "<symbol-ident>",
-                value.symbol_id(),
-            )),
+                [value.symbol_id()],
+            ).into()),
         }
     }
 }
@@ -91,10 +90,10 @@ impl TryFrom<Ast> for IdentChain {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::IdentChain(chain) => Ok(chain),
-            _ => Err(Self::Error::wrong_symbol(
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol(
                 "<ident-chain>",
-                value.symbol_id(),
-            )),
+                [value.symbol_id()],
+            ).into()),
         }
     }
 }
@@ -105,10 +104,10 @@ impl TryFrom<Ast> for Token {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::Token(tok) => Ok(tok),
-            _ => Err(Self::Error::wrong_symbol(
+            _ => Err(yalp_core::ErrorKind::unexpected_symbol(
                 "<ident-chain>",
-                value.symbol_id(),
-            )),
+                [value.symbol_id()],
+            ).into()),
         }
     }
 }
@@ -131,7 +130,7 @@ impl TryFrom<Ast> for Literal {
     }
 }
 
-impl yalp::traits::Ast for Ast {
+impl yalp_core::traits::Ast for Ast {
     fn symbol_id(&self) -> &str {
         match self {
             Ast::Token(tok) => tok.symbol_id(),
@@ -152,11 +151,11 @@ impl From<Token> for Ast {
 // Rule reducers //
 ///////////////////
 
-fn r1(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r1(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     Ok(lhs.next().unwrap())
 }
 
-fn r2(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r2(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let mut set: SymbolIdentSet = lhs.next().unwrap().try_into()?;
     lhs.next();
     let ident: SymbolIdent = lhs.next().unwrap().try_into()?;
@@ -166,45 +165,55 @@ fn r2(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
     Ok(Ast::SymbolIdentSet(set))
 }
 
-fn r3(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r3(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let ident: SymbolIdent = lhs.next().unwrap().try_into()?;
 
     Ok(Ast::SymbolIdentSet(SymbolIdentSet(vec![ident.0])))
 }
 
-fn r4(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r4(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let chain: IdentChain = lhs.next().unwrap().try_into()?;
     Ok(Ast::SymbolIdent(SymbolIdent(chain.0)))
 }
 
-fn r5(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r5(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let lit: Literal = lhs.next().unwrap().try_into()?;
     Ok(Ast::SymbolIdent(SymbolIdent(lit.to_string())))
 }
 
-fn r6(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r6(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     lhs.next();
     let chain: IdentChain = lhs.next().unwrap().try_into()?;
 
     Ok(Ast::SymbolIdent(SymbolIdent(format!("<{}>", chain.0))))
 }
 
-fn r7(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r7(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let mut chain: IdentChain = lhs.next().unwrap().try_into()?;
     let mut lhs = lhs.skip(1);
 
     let ident: Ident = lhs.next().unwrap().try_into()?;
+    chain.0.push('-');
     chain.0.push_str(&ident.to_string());
 
     Ok(Ast::IdentChain(chain))
 }
 
-fn r8(_: &Rule, mut lhs: AstIter<Ast>) -> Result<Ast, YalpError<Error>> {
+fn r8(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
     let ident: Ident = lhs.next().unwrap().try_into()?;
     Ok(Ast::IdentChain(IdentChain(ident.to_string())))
 }
 
-const REDUCERS: &[RuleReducer<Ast, Error>] = &[r1, r2, r3, r4, r5, r6, r7, r8];
+const REDUCERS: &[ConstRuleReducer<Ast, Error>] = &[
+    RuleReducer::new(r1), 
+    RuleReducer::new(r2), 
+    RuleReducer::new(r3), 
+    RuleReducer::new(r4), 
+    RuleReducer::new(r5), 
+    RuleReducer::new(r6), 
+    RuleReducer::new(r7), 
+    RuleReducer::new(r8)
+];
 
 /// Parse a collection of symbol idents : <symbol-ident>, <symbol-ident> ...
 pub fn parse_symbol_ident_set(stream: TokenStream) -> Result<SymbolIdentSet, YalpError<Error>> {

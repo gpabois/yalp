@@ -11,6 +11,7 @@ pub(crate) mod lexer;
 pub(crate) use grammar::parse_grammar;
 pub(crate) use lexer::{Lexer, Token};
 pub(crate) use symbol::{parse_symbol_ident_set, SymbolIdentSet};
+pub(crate) use rule::{parse_rule_set, RuleSet, Rule};
 
 pub(crate) type Error = ();
 
@@ -36,8 +37,7 @@ pub fn grammar(stream: TokenStream) -> TokenStream {
 }
 
 pub(crate) fn process_grammar_macro(stream: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-    let grammar_input = parse_grammar(stream).unwrap();
-    quote! {}.into()
+    parse_grammar(stream).unwrap().into_token_stream()
 }
 
 #[cfg(test)]
@@ -46,21 +46,20 @@ mod tests {
 
     use proc_macro2::TokenStream;
 
-    use super::parse_grammar;
+    use super::{parse_grammar, process_grammar_macro};
 
     #[test]
     pub fn test_grammar_macro() {
-        let ast = parse_grammar(
-            TokenStream::from_str(
-                "
+        let stream = TokenStream::from_str("
             terminals: [E, B, 0, <long-terminal>],
             non_terminals: [],
-            rules: {}
-        ",
-            )
-            .expect("cannot parse macro"),
-        );
+            rules: {
+                <start> => E <eos>;
+            }
+        ").expect("cannot parse macro");
 
-        println!("{:#?}", ast);
+        let ast = process_grammar_macro(stream);
+
+        println!("{ast}");
     }
 }

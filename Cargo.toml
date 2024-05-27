@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-  "yalp",
+  "yalp-core",
   "yalp-macros",
+  "yalp",
   "yalp-tests"
 ]

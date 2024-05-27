@@ -379,9 +379,18 @@ checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
 name = "yalp"
 version = "0.1.0"
 dependencies = [
+ "yalp-core",
+ "yalp-macros",
+]
+
+[[package]]
+name = "yalp-core"
+version = "0.1.0"
+dependencies = [
  "itertools",
  "prettytable-rs",
  "ruast",
+ "thiserror",
 ]
 
 [[package]]
@@ -392,7 +401,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
- "yalp",
+ "yalp-core",
 ]
 
 [[package]]
@@ -400,5 +409,4 @@ name = "yalp-tests"
 version = "0.1.0"
 dependencies = [
  "yalp",
- "yalp-macros",
 ]

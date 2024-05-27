@@ -5,5 +5,4 @@ edition = "2021"
 
 [dev-dependencies]
 yalp = { path = '../yalp' }
-yalp-macros = { path = '../yalp-macros' }
 

@@ -1,18 +1,18 @@
-use std::fmt::Debug;
-use std::marker::{PhantomData, PhantomPinned};
+use std::marker::PhantomData;
 
 use crate::grammar::traits::Grammar;
+use crate::rule::traits::RuleReducer;
 use crate::token::traits::Token;
 use crate::traits::SymbolSlice as _;
 use crate::{
-    lexer::{traits::Lexer, LexerError},
+    lexer::traits::Lexer,
     parser::{traits::Ast, traits::Parser},
-    ItemSetId, RuleId, RuleReducer, RuleSet,
+    ItemSetId, RuleSet,
 };
-use crate::{AstIter, OwnedSymbol, Rule, YalpError};
+use crate::{YalpError, ErrorKind, YalpResult};
 
 mod action;
-mod codegen;
+pub mod codegen;
 mod graph;
 mod table;
 mod transition;
@@ -22,75 +22,11 @@ use graph::*;
 pub use table::*;
 use transition::*;
 
-#[derive(Debug)]
-pub enum LrParserError {
-    MissingRule(RuleId),
-    MissingAction(ItemSetId, OwnedSymbol),
-    MissingGoto(ItemSetId, OwnedSymbol),
-    MissingState(ItemSetId),
-    LexerError(LexerError),
-    UnknownSymbol(String),
-    UnexpectedSymbol {
-        expected: String,
-        got: String,
-    },
-    UnsupportedLrRank,
-    ShiftReduceConflict {
-        state: ItemSetId,
-        symbol: OwnedSymbol,
-        conflict: [Action; 2],
-    },
-    Custom(String),
-}
-
-impl From<LexerError> for LrParserError {
-    fn from(value: LexerError) -> Self {
-        Self::LexerError(value)
-    }
-}
-
-impl std::fmt::Display for LrParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LrParserError::MissingRule(id) => write!(f, "missing rule #{}", id),
-            LrParserError::MissingState(id) => write!(f, "missing state #{}", id),
-            LrParserError::ShiftReduceConflict {
-                state,
-                symbol,
-                conflict,
-            } => write!(
-                f,
-                "shift/reduce conflict for symbol {}, (state: #{}) [{:?}]",
-                symbol.id, state, conflict
-            ),
-            LrParserError::UnsupportedLrRank => write!(f, "cannot build LR table for K > 1."),
-            LrParserError::LexerError(error) => write!(f, "{error}"),
-            LrParserError::MissingAction(state_id, symbol) => write!(
-                f,
-                "missing action for terminal {} (state #{})",
-                symbol, state_id
-            ),
-            LrParserError::MissingGoto(state_id, symbol) => write!(
-                f,
-                "missing goto for non-terminal {} (state #{})",
-                symbol, state_id
-            ),
-            LrParserError::UnknownSymbol(symbol_id) => write!(f, "unknown symbol {symbol_id}"),
-            LrParserError::UnexpectedSymbol { expected, got } => {
-                write!(f, "unexpected symbol {}, expecting {}", got, expected)
-            }
-            LrParserError::Custom(err) => write!(f, "{err}"),
-        }
-    }
-}
-
-pub type LrResult<T> = Result<T, LrParserError>;
-
 pub struct LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error>
 where
     Node: Ast,
     Table: self::traits::LrTable,
-    Reducer: Fn(&Rule, AstIter<Node>) -> Result<Node, YalpError<Error>>,
+    Reducer: RuleReducer<'sid, Error, Ast = Node>
 {
     rules: RuleSet<'sid, 'sym>,
     table: &'table Table,
@@ -103,7 +39,7 @@ impl<'sid, 'g, 'table, 'reducers, Node, Table, Reducer, Error>
 where
     Node: Ast,
     Table: self::traits::LrTable,
-    Reducer: Fn(&Rule, AstIter<Node>) -> Result<Node, YalpError<Error>>,
+    Reducer: RuleReducer<'sid, Error, Ast = Node>
 {
     pub fn new<G>(grammar: &'g G, table: &'table Table, reducers: &'reducers [Reducer]) -> Self
     where
@@ -128,17 +64,17 @@ where
     }
 }
 
-impl<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error> Parser
+impl<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error> Parser<Error>
     for LrParser<'sid, 'sym, 'table, 'reducers, Node, Table, Reducer, Error>
 where
+    Error: Clone,
     Node: Ast,
     Table: self::traits::LrTable,
-    Reducer: Fn(&Rule, AstIter<Node>) -> Result<Node, YalpError<Error>>,
+    Reducer: RuleReducer<'sid, Error, Ast = Node>
 {
     type Ast = Node;
-    type Error = YalpError<Error>;
 
-    fn parse<L: Lexer>(&self, lexer: &mut L) -> Result<Self::Ast, Self::Error>
+    fn parse<L: Lexer<Error>>(&self, lexer: &mut L) -> YalpResult<Self::Ast, Error>
     where
         Self::Ast: From<L::Token>,
     {
@@ -154,19 +90,20 @@ where
                 None => (self.rules.eos(), None),
                 Some(Ok(tok)) => (
                     self.rules
-                        .get_symbol_by_id(tok.symbol_id())
-                        .ok_or_else(|| LrParserError::UnknownSymbol(tok.symbol_id().to_string()))
-                        .map_err(Self::Error::from)?,
+                        .try_get_symbol_by_id(tok.symbol_id())?,
                     Some(tok),
                 ),
-                Some(Err(err)) => return Err(LrParserError::LexerError(err.clone()).into()),
+                Some(Err(err)) => return Err(err.clone()),
             };
 
             let action = self
                 .table
                 .action(state, &symbol)
-                .ok_or(LrParserError::MissingAction(state, symbol.to_owned()))?;
-
+                .ok_or_else(|| YalpError::new(ErrorKind::unexpected_symbol(
+                    symbol.id,
+                    self.table.iter_terminals(state).map(|s| s.id.to_string())
+                ), None))?;
+    
             println!("#{} {} :: {}", state, symbol, action);
             match action {
                 // Push the new terminal on top of the stack
@@ -193,10 +130,11 @@ where
                             .zip(rule.rhs.iter())
                             .try_for_each(|(node, expected_symbol)| {
                                 if node.symbol_id() != expected_symbol.id {
-                                    Err(LrParserError::UnexpectedSymbol {
-                                        expected: expected_symbol.id.to_string(),
-                                        got: node.symbol_id().to_string(),
-                                    })
+                                    Err(YalpError::new(
+                                        ErrorKind::unexpected_symbol(
+                                            &node.symbol_id().to_string(), vec![expected_symbol.id]), 
+                                        None
+                                    ))
                                 } else {
                                     Ok(())
                                 }
@@ -208,20 +146,27 @@ where
                         let goto = self
                             .table
                             .goto(state, &rule.lhs)
-                            .ok_or(LrParserError::MissingGoto(state, rule.lhs.to_owned()))?;
-
+                            .ok_or_else(|| YalpError::new(
+                                ErrorKind::unexpected_symbol(
+                                    &rule.lhs.id, 
+                                    self.table.iter_non_terminals(state).map(|s| s.id.to_string())
+                                ), 
+                                None
+                            ))?;
+                            
                         states.push(goto);
 
                         let reducer = self.reducers.get(*rule_id).unwrap();
-                        reducer(rule, drained)
+                        reducer.reduce(rule, drained.into())
                     }?;
 
                     if ast.symbol_id() != rule.lhs.id {
-                        return Err(LrParserError::UnexpectedSymbol {
-                            expected: rule.lhs.id.to_owned(),
-                            got: ast.symbol_id().to_string(),
-                        }
-                        .into());
+                        return Err(YalpError::new(
+                            ErrorKind::unexpected_symbol(
+                                ast.symbol_id() ,
+                                vec![rule.lhs.id]), 
+                            None
+                        ));
                     }
 
                     stack.push(ast);
@@ -237,29 +182,26 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{ast_reduce, AstNode},
-        fixtures::{FIXTURE_LR0_GRAMMAR, FIXTURE_LR1_GRAMMAR},
-        lexer::fixtures::{lexer_fixture_lr0, lexer_fixture_lr1},
-        traits::Parser as _,
+        ast::AstNodeReducer, fixtures::{FIXTURE_LR0_GRAMMAR, FIXTURE_LR1_GRAMMAR}, lexer::fixtures::{lexer_fixture_lr0, lexer_fixture_lr1}, traits::Parser as _, NoCustomError
     };
 
     use super::{LrParser, LrTable};
 
     #[test]
     pub fn test_lr0_grammar_table_building() {
-        let table = LrTable::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<0, _, NoCustomError>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
         println!("{}", table);
     }
 
     #[test]
     pub fn test_lr1_grammar_table_building() {
-        let table = LrTable::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<1, _, NoCustomError>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
         println!("{}", table);
     }
 
     #[test]
     pub fn test_lr0_parser() {
-        let table = LrTable::build::<0, _>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<0, _, NoCustomError>(&FIXTURE_LR0_GRAMMAR).expect("cannot build table");
 
         let mut lexer = lexer_fixture_lr0("1 + 1 * 0 * 1 * 1".chars());
 
@@ -267,7 +209,12 @@ mod tests {
             &FIXTURE_LR0_GRAMMAR,
             &table,
             &[
-                ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce,
+                AstNodeReducer, 
+                AstNodeReducer, 
+                AstNodeReducer, 
+                AstNodeReducer, 
+                AstNodeReducer, 
+                AstNodeReducer,
             ],
         );
 
@@ -277,14 +224,19 @@ mod tests {
 
     #[test]
     pub fn test_lr1_parser() {
-        let table = LrTable::build::<1, _>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
+        let table = LrTable::build::<1, _, NoCustomError>(&FIXTURE_LR1_GRAMMAR).expect("cannot build table");
 
         let mut lexer = lexer_fixture_lr1("n + n".chars());
         let parser = LrParser::new(
             &FIXTURE_LR1_GRAMMAR,
             &table,
             &[
-                ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce, ast_reduce,
+                AstNodeReducer,
+                AstNodeReducer,
+                AstNodeReducer,
+                AstNodeReducer,
+                AstNodeReducer,
+                AstNodeReducer
             ],
         );
 
