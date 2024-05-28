@@ -4,7 +4,8 @@ use crate::{token::Token, YalpResult};
 
 use self::traits::Lexer as _;
 
-pub mod graph;
+pub mod atomic;
+//pub mod graph;
 
 pub mod traits {
     use crate::{token::traits::Token, YalpResult};
@@ -26,20 +27,19 @@ pub enum Action<'kind> {
     Consume,
     Write,
     Push(&'kind str),
-    Merge(&'kind str, usize)
-
+    Merge(&'kind str, usize),
 }
 #[derive(Debug, Default)]
 pub struct ActionSequence<'kind> {
     actions: Vec<Action<'kind>>,
-    goto: usize
+    goto: usize,
 }
 
 impl<'kind> ActionSequence<'kind> {
     pub fn new(goto: usize) -> Self {
         Self {
             actions: vec![],
-            goto
+            goto,
         }
     }
 
@@ -130,22 +130,21 @@ where
         let token = Token::new(kind, self.take(), self.span(), vec![]);
     }
 
-
     /// Merge the n last fragments on the stack
     fn merge(&mut self, kind: &'kind str, n: usize) {
         let consume = self.fragments.len().saturating_sub(n);
         let token = Token::new(
-            kind, 
-            self.take(), 
-            self.span(), 
-            self.fragments.drain(consume..).collect()
+            kind,
+            self.take(),
+            self.span(),
+            self.fragments.drain(consume..).collect(),
         );
     }
 
     /// Write the TOS fragment in the output stream.
     fn write(&mut self) -> Token<'kind> {
         self.fragments.pop().unwrap()
-    }    
+    }
 
     fn next_char(&mut self) -> Option<char> {
         if self.reconsume.is_some() {
@@ -192,7 +191,7 @@ where
             });
 
             if action_result.is_err() {
-                return Some(Err(action_result.unwrap_err()))
+                return Some(Err(action_result.unwrap_err()));
             }
 
             let seq = action_result.unwrap_or_else(|_| unreachable!());
@@ -279,13 +278,9 @@ pub mod fixtures {
             '+' => Ok(ActionSequence::new(0).consume().push("+").write()),
             '*' => Ok(ActionSequence::new(0).consume().push("*").write()),
             ' ' => Ok(ActionSequence::new(0)),
-            _ => Err(
-                YalpError::new(
-                    ErrorKind::unexpected_symbol(
-                    &ch.to_string(), 
-                    vec!["0", "1", "*", " "]
-                    )
-                , None
+            _ => Err(YalpError::new(
+                ErrorKind::unexpected_symbol(&ch.to_string(), vec!["0", "1", "*", " "]),
+                None,
             )),
         }
     }
@@ -310,13 +305,9 @@ pub mod fixtures {
             ')' => Ok(ActionSequence::new(0).consume().push(")").write()),
             '0' => Ok(ActionSequence::new(0).consume()),
             ' ' => Ok(ActionSequence::new(0)),
-            _ => Err(
-                YalpError::new(
-                    ErrorKind::unexpected_symbol(
-                    &ch.to_string(), 
-                    vec!["0", "1", "*", " "]
-                    )
-                , None
+            _ => Err(YalpError::new(
+                ErrorKind::unexpected_symbol(&ch.to_string(), vec!["0", "1", "*", " "]),
+                None,
             )),
         }
     }
@@ -332,7 +323,6 @@ pub mod fixtures {
     {
         Lexer::new(LR1_LEXER_STATES, iter)
     }
-
 }
 
 #[cfg(test)]
