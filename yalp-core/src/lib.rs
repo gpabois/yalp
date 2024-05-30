@@ -1,4 +1,6 @@
 pub mod ast;
+pub mod dfa;
+pub mod error;
 pub mod grammar;
 pub mod item;
 pub mod lexer;
@@ -7,7 +9,6 @@ pub mod parser;
 pub mod rule;
 pub mod symbol;
 pub mod token;
-pub mod error;
 
 pub use grammar::ConstGrammar;
 pub use lexer::*;
@@ -29,7 +30,7 @@ pub mod traits {
 
 mod array;
 
-pub use error::{YalpError, ErrorKind, NoCustomError};
+pub use error::{ErrorKind, NoCustomError, YalpError};
 pub type YalpResult<T, E> = Result<T, YalpError<E>>;
 
 #[cfg(test)]

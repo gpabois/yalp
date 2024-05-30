@@ -37,7 +37,6 @@ impl IntoGraph for Sequence {
     }
 }
 
-
 /// A1 | A2 | ... | An
 pub struct Either(Vec<Expr>);
 
@@ -59,7 +58,6 @@ impl IntoGraphFragment for Either {
     }
 }
 
-
 /// (A1)
 pub struct Group(Box<Expr>, Option<String>);
 
@@ -78,7 +76,6 @@ pub enum Quantifier {
 
 /// A{n,m} or A+, or A?, or A*
 pub struct Quantified(Box<Expr>, Quantifier);
-
 
 #[derive(Clone)]
 pub struct Leaf {

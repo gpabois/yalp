@@ -4,9 +4,6 @@ use crate::{token::Token, YalpResult};
 
 use self::traits::Lexer as _;
 
-pub mod atomic;
-//pub mod graph;
-
 pub mod traits {
     use crate::{token::traits::Token, YalpResult};
 
