@@ -39,6 +39,10 @@ impl<S, A> Graph<S, A> {
         })
     }
 
+    pub fn iter_follow(&self, from: Node) -> impl Iterator<Item = &Edge<S, A>> {
+        self.edges.iter().filter(move |edge| edge.from == from)
+    }
+
     pub fn iter_entering_edges(&self) -> impl Iterator<Item = &Edge<S, A>> {
         self.edges.iter().filter(|edge| edge.from.is_start())
     }

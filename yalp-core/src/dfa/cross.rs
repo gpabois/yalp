@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{collections::HashSet, default, ops::Deref};
 
 use itertools::Itertools;
 
@@ -9,25 +9,44 @@ use super::{
 
 impl<S, A> std::ops::Mul<Graph<S, A>> for Graph<S, A>
 where
-    S: Set,
+    S: Set + Clone,
     A: Clone,
 {
     type Output = CrossGraph<S, A>;
 
     fn mul(self, rhs: Graph<S, A>) -> Self::Output {
-        let cross = CrossGraph::default();
-        let lhs = self;
+        let mut cross_graph = CrossGraph::new(self, rhs);
 
         let mut stack = vec![(
-            lhs.iter_entering_edges()
+            cross_graph.left.iter_entering_edges()
                 .cloned()
                 .collect::<EdgeSet<S, A>>(),
-            rhs.iter_entering_edges()
+            cross_graph.right.iter_entering_edges()
                 .cloned()
                 .collect::<EdgeSet<S, A>>(),
         )];
 
-        cross
+        let mut lhs_visited = HashSet::<Node>::default();
+        let mut rhs_visited = HashSet::<Node>::default();
+
+        while let Some((lhs_edges, rhs_edges)) = stack.pop() {
+            let cross = lhs_edges * rhs_edges; 
+            cross_graph.edges.extend(cross.clone());
+
+            let (lhs_nodes, rhs_nodes) = cross.get_following_nodes();
+            
+            let lhs_edges: EdgeSet<S,A> = lhs_nodes.into_iter().flat_map(|from| {
+                cross_graph.left.iter_follow(from)
+            }).cloned().collect();
+            
+            let rhs_edges: EdgeSet<S,A>  = rhs_nodes.into_iter().flat_map(|from| {
+                cross_graph.right.iter_follow(from)
+            }).cloned().collect();
+
+            stack.push((lhs_edges, rhs_edges));
+        }
+
+        cross_graph
     }
 }
 
@@ -90,7 +109,17 @@ where
 pub struct CrossGraph<S, A> {
     pub left: Graph<S, A>,
     pub right: Graph<S, A>,
-    pub edges: CrossEdge<S, A>,
+    pub edges: CrossEdgeSet<S, A>,
+}
+
+impl<S,A> CrossGraph<S,A> {
+    pub fn new(left: Graph<S,A>, right: Graph<S,A>) -> Self {
+        Self {
+            left,
+            right,
+            edges: CrossEdgeSet::default()
+        }
+    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -106,9 +135,10 @@ impl std::hash::Hash for CrossNode {
     }
 }
 
-pub struct CrossEdge<C, A> {
+#[derive(Clone)]
+pub struct CrossEdge<S, A> {
     from: CrossNode,
-    set: C,
+    set: S,
     actions: ActionSequence<A>,
     to: CrossNode,
 }
@@ -155,11 +185,23 @@ where
     }
 }
 
+/// A set of cross edges
+#[derive(Clone)]
 pub struct CrossEdgeSet<S, A>(Vec<CrossEdge<S, A>>);
 
 impl<S, A> Default for CrossEdgeSet<S, A> {
     fn default() -> Self {
         Self(Default::default())
+    }
+}
+
+impl<S,A> IntoIterator for CrossEdgeSet<S,A> {
+    type Item = CrossEdge<S,A>;
+
+    type IntoIter = <Vec<CrossEdge<S, A>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -177,6 +219,12 @@ impl<S, A> Deref for CrossEdgeSet<S, A> {
     }
 }
 
+impl<S,A> CrossEdgeSet<S,A> {
+    pub fn extend<I: IntoIterator<Item=CrossEdge<S,A>>>(&mut self, iter: I) {
+        self.0.extend(iter);
+    }
+}
+
 impl<S, A> CrossEdgeSet<S, A>
 where
     S: Set,
@@ -189,5 +237,27 @@ where
             .into_iter()
             .flat_map(|(_, g)| g.into_iter().reduce(CrossEdge::merge))
             .collect()
+    }
+
+    pub fn get_following_nodes(self) -> (HashSet<Node>, HashSet<Node>) {
+        let mut lhs = HashSet::<Node>::default();
+        let mut rhs = HashSet::<Node>::default();
+
+        for edge in self.iter() {
+            match edge.to {
+                CrossNode::Left(l) => {
+                    lhs.insert(l);
+                },
+                CrossNode::Right(r) => {
+                    rhs.insert(r);
+                },
+                CrossNode::Shared(l, r) => {
+                    lhs.insert(l);
+                    rhs.insert(r);
+                }
+            }
+        }
+
+        (lhs, rhs)
     }
 }
