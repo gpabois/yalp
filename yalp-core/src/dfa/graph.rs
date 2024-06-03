@@ -11,11 +11,16 @@ where
     fn into_graph(self) -> Graph<S, A>;
 }
 
-#[derive(Default)]
 pub struct Graph<S, A> {
-    edges: EdgeSet<S, A>,
+    pub edges: EdgeSet<S, A>,
     offset: usize,
     count: usize,
+}
+
+impl<S,A> Default for Graph<S,A> {
+    fn default() -> Self {
+        Self { edges: Default::default(), offset: Default::default(), count: Default::default() }
+    }
 }
 
 impl<S, A> Graph<S, A> {
@@ -34,6 +39,7 @@ impl<S, A> Graph<S, A> {
         self.edges.push(Edge {
             from,
             to,
+            priority: 0,
             set,
             actions: actions.into_iter().collect(),
         })
@@ -85,6 +91,7 @@ where
             rhs.iter_entering_edges().map(|entering| Edge {
                 from: leaving.from,
                 set: entering.set.clone(),
+                priority: 0,
                 actions: entering.actions.clone() + leaving.actions.clone(),
                 to: entering.to,
             })
@@ -163,12 +170,20 @@ pub struct EdgeId {
 }
 
 pub struct Edge<S, A> {
+    /// The source node
     pub from: Node,
+    
+    /// The targeted node
+    pub to: Node,
+
+    /// The priority
+    pub priority: isize,
+    
     /// If the set contains the item, then it is a valid state transition.
     pub set: S,
+    
     /// The action to perform if the edge is taken.
     pub actions: ActionSequence<A>,
-    pub to: Node,
 }
 
 impl<S, A> Edge<S, A> {
@@ -189,6 +204,7 @@ where
         Self {
             from: self.from,
             to: self.to,
+            priority: self.priority,
             set: self.set.clone(),
             actions: self.actions.clone(),
         }
