@@ -11,6 +11,7 @@ where
     fn into_graph(self) -> Graph<S, A>;
 }
 
+#[derive(Clone)]
 pub struct Graph<S, A> {
     pub edges: EdgeSet<S, A>,
     offset: usize,
@@ -45,13 +46,44 @@ impl<S, A> Graph<S, A> {
         })
     }
 
+    pub fn on_with_lowest_priority<I>(&mut self, from: Node, to: Node, set: S, actions: I)
+    where
+        I: IntoIterator<Item = A>,
+    {
+        self.edges.push(Edge {
+            from,
+            to,
+            priority: isize::MIN,
+            set,
+            actions: actions.into_iter().collect(),
+        })
+    }
+
+    /// Iterate over nodes which are directly connected to the End node.
+    pub fn iter_tails(&self) -> impl Iterator<Item = Node> + '_ {
+        self.iter_leaving_edges().map(|e| e.from)
+    } 
+
+    pub fn iter_precede(&self, to: Node) -> impl Iterator<Item = &Edge<S, A>> {
+        self.edges.iter().filter(move |edge| edge.to == to)  
+    } 
+
     pub fn iter_follow(&self, from: Node) -> impl Iterator<Item = &Edge<S, A>> {
         self.edges.iter().filter(move |edge| edge.from == from)
+    }
+
+    pub fn iter_mut_entering_edges(&mut self) -> impl Iterator<Item = &mut Edge<S, A>> {
+        self.edges.iter_mut().filter(|edge| edge.from.is_start())
     }
 
     pub fn iter_entering_edges(&self) -> impl Iterator<Item = &Edge<S, A>> {
         self.edges.iter().filter(|edge| edge.from.is_start())
     }
+
+    pub fn iter_mut_leaving_edges(&mut self) -> impl Iterator<Item = &mut Edge<S, A>> {
+        self.edges.iter_mut().filter(|edge| edge.to.is_end())
+    }
+
 
     pub fn iter_leaving_edges(&self) -> impl Iterator<Item = &Edge<S, A>> {
         self.edges.iter().filter(|edge| edge.to.is_end())
@@ -76,7 +108,7 @@ where
 {
     /// Append a graph
     pub fn append(&mut self, mut rhs: Self) {
-        rhs += self.offset + self.count;
+        rhs.offset(self.offset + self.count);
 
         self.count += rhs.count;
         let mut edges = EdgeSet::default();
@@ -98,27 +130,6 @@ where
         }));
 
         self.edges = edges;
-    }
-}
-
-/// Offset the fragment
-impl<S, A> std::ops::AddAssign<usize> for Graph<S, A> {
-    fn add_assign(&mut self, rhs: usize) {
-        self.offset(rhs)
-    }
-}
-
-/// Append two fragments
-impl<S, A> std::ops::Add<Self> for Graph<S, A>
-where
-    S: Clone,
-    A: Clone,
-{
-    type Output = Self;
-
-    fn add(mut self, rhs: Self) -> Self::Output {
-        self.append(rhs);
-        self
     }
 }
 
@@ -218,6 +229,7 @@ impl<S, A> std::ops::AddAssign<usize> for Edge<S, A> {
     }
 }
 
+#[derive(Clone)]
 pub struct EdgeSet<S, A>(Vec<Edge<S, A>>);
 
 impl<S, A> Default for EdgeSet<S, A> {
@@ -267,6 +279,12 @@ impl<S, A> FromIterator<Edge<S, A>> for EdgeSet<S, A> {
 
 #[derive(Default)]
 pub struct ActionSequence<A>(Vec<A>);
+
+impl<A> ActionSequence<A> {
+    pub fn push(&mut self, action: A) {
+        self.0.push(action)
+    }
+}
 
 impl<A> Clone for ActionSequence<A>
 where

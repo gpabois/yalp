@@ -1,3 +1,5 @@
+pub mod charset;
+pub mod regex;
 pub mod ast;
 pub mod dfa;
 pub mod error;

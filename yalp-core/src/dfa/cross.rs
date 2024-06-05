@@ -7,15 +7,93 @@ use super::{
     Set,
 };
 
-impl<S, A> std::ops::Mul<Graph<S, A>> for Graph<S, A>
+impl<S,A> Graph<S,A> 
 where
     S: Set + Clone,
     A: Clone,
 {
-    type Output = CrossGraph<S, A>;
+    /// Merge two graphes into one
+    pub fn merge(lhs: Self, rhs: Self) -> Self {
+        CrossGraph::new(lhs, rhs).into_graph()
+    }
+}
 
-    fn mul(self, rhs: Graph<S, A>) -> Self::Output {
-        let mut cross_graph = CrossGraph::new(self, rhs);
+impl<S, A> Edge<S, A>
+where
+    S: Set + Clone,
+    A: Clone 
+{
+
+    fn cross_product(lhs: Self, rhs: Self) -> CrossEdgeSet<S,A> {
+        let left = CrossEdge {
+            from: CrossNode::left(lhs.from),
+            to: CrossNode::left(lhs.to),
+            priority: lhs.priority,
+            // E1 - E2
+            set: S::difference(lhs.set.clone(), rhs.set.clone()),
+            actions: lhs.actions.clone(),
+
+        };
+
+        let right = CrossEdge {
+            from: CrossNode::right(rhs.from),
+            to: CrossNode::right(rhs.to),
+            priority: rhs.priority,
+            // E2 - E1
+            set: S::difference(rhs.set.clone(), lhs.set.clone()),
+            actions: rhs.actions.clone(),
+        };
+
+        let shared = CrossEdge {
+            from: CrossNode::shared(lhs.from, rhs.from),
+            to: CrossNode::shared(lhs.to, rhs.to),
+            priority: lhs.priority,
+            // E1 ^ E2
+            set: S::intersect(rhs.set.clone(), lhs.set.clone()),
+            actions: rhs.actions + lhs.actions,
+        };
+
+        [left, right, shared]
+            .into_iter()
+            .filter(|e| !e.is_empty())
+            .collect()
+    }
+}
+
+impl<S, A> EdgeSet<S, A>
+where
+    S: Set + Clone,
+    A: Clone,
+{
+    pub fn cross_product(lhs: Self, rhs: Self) -> CrossEdgeSet<S,A> {
+        lhs.cartesian_product(rhs)
+            .flat_map(|(lhs, rhs)| Edge::cross_product(lhs, rhs))
+            .collect::<CrossEdgeSet<S, A>>()
+            .merge()
+    }
+}
+
+pub struct CrossGraph<S, A> {
+    pub left: Graph<S, A>,
+    pub right: Graph<S, A>,
+    pub edges: CrossEdgeSet<S, A>,
+}
+
+impl<S,A> CrossGraph<S,A> 
+where
+    S: Set + Clone,
+    A: Clone,
+{
+    pub fn new(left: Graph<S,A>, right: Graph<S,A>) -> Self {
+        Self {
+            left,
+            right,
+            edges: CrossEdgeSet::default()
+        }
+    }
+
+    pub fn merge(lhs: Graph<S, A>, rhs: Graph<S, A>) -> CrossGraph<S,A> {
+        let mut cross_graph = CrossGraph::new(lhs, rhs);
 
         let mut stack = vec![CrossNode::Start];
         let mut visited = Vec::<CrossNode>::default();
@@ -31,7 +109,7 @@ where
                 CrossNode::Start => {
                     let ledges: EdgeSet<_, _> = cross_graph.left.iter_entering_edges().cloned().collect();
                     let redges: EdgeSet<_, _> = cross_graph.right.iter_entering_edges().cloned().collect();
-                    let cedges = ledges * redges;
+                    let cedges = EdgeSet::cross_product(ledges, redges);
                     
                     cedges.iter().for_each(|edge| {
                         stack.push(edge.to)
@@ -66,7 +144,7 @@ where
                 CrossNode::Shared(lhs, rhs) => {
                     let ledges: EdgeSet<_, _> = cross_graph.left.iter_follow(lhs).cloned().collect();
                     let redges: EdgeSet<_, _> = cross_graph.right.iter_follow(rhs).cloned().collect();
-                    let cedges = ledges * redges;
+                    let cedges = EdgeSet::cross_product(ledges, redges);
                     
                     cedges.iter().for_each(|edge| {
                         stack.push(edge.to)
@@ -79,82 +157,6 @@ where
         }
 
         cross_graph
-    }
-}
-
-impl<S, A> std::ops::Mul<Self> for Edge<S, A>
-where
-    S: Set + Clone,
-    A: Clone,
-{
-    type Output = Vec<CrossEdge<S, A>>;
-
-    fn mul(self, rhs: Self) -> Vec<CrossEdge<S, A>> {
-        let left = CrossEdge {
-            from: CrossNode::left(self.from),
-            to: CrossNode::left(self.to),
-            priority: self.priority,
-            // E1 - E2
-            set: S::difference(self.set.clone(), rhs.set.clone()),
-            actions: self.actions.clone(),
-
-        };
-
-        let right = CrossEdge {
-            from: CrossNode::right(rhs.from),
-            to: CrossNode::right(rhs.to),
-            priority: self.priority,
-            // E2 - E1
-            set: S::difference(rhs.set.clone(), self.set.clone()),
-            actions: rhs.actions.clone(),
-        };
-
-        let shared = CrossEdge {
-            from: CrossNode::shared(self.from, rhs.from),
-            to: CrossNode::shared(self.to, rhs.to),
-            priority: self.priority,
-            // E1 ^ E2
-            set: S::intersect(rhs.set.clone(), self.set.clone()),
-            actions: rhs.actions + self.actions,
-        };
-
-        [left, right, shared]
-            .into_iter()
-            .filter(|e| !e.is_empty())
-            .collect()
-    }
-}
-
-impl<S, A> std::ops::Mul<Self> for EdgeSet<S, A>
-where
-    S: Set + Clone,
-    A: Clone,
-{
-    type Output = CrossEdgeSet<S, A>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        let lhs = self;
-
-        lhs.cartesian_product(rhs)
-            .flat_map(|(lhs, rhs)| lhs * rhs)
-            .collect::<CrossEdgeSet<S, A>>()
-            .merge()
-    }
-}
-
-pub struct CrossGraph<S, A> {
-    pub left: Graph<S, A>,
-    pub right: Graph<S, A>,
-    pub edges: CrossEdgeSet<S, A>,
-}
-
-impl<S,A> CrossGraph<S,A> {
-    pub fn new(left: Graph<S,A>, right: Graph<S,A>) -> Self {
-        Self {
-            left,
-            right,
-            edges: CrossEdgeSet::default()
-        }
     }
 }
 
@@ -284,6 +286,7 @@ impl<S, A> CrossEdge<S, A> {
         self.id() == rhs.id()
     }
 }
+
 impl<C, A> CrossEdge<C, A>
 where
     C: Set,
