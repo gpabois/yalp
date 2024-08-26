@@ -5,6 +5,7 @@ use std::{
 
 use crate::dfa;
 
+#[derive(Clone)]
 /// A set of chars
 pub enum CharSet {
     And(And),
@@ -257,6 +258,7 @@ impl Not for CharSet {
     }
 }
 
+#[derive(Clone)]
 pub struct In(HashSet<char>);
 impl In {
     pub fn is_empty(&self) -> bool {
@@ -275,6 +277,7 @@ impl Not for In {
     }
 }
 
+#[derive(Clone)]
 pub struct NotIn(HashSet<char>);
 impl Not for NotIn {
     type Output = In;
@@ -292,6 +295,7 @@ impl NotIn {
     }
 }
 
+#[derive(Clone)]
 pub struct And(Vec<CharSet>);
 impl And {
     pub fn contains(&self, ch: &char) -> bool {
@@ -310,6 +314,8 @@ impl Not for And {
         Or(self.0.into_iter().map(CharSet::not).collect())
     }
 }
+
+#[derive(Clone)]
 pub struct Or(Vec<CharSet>);
 impl Or {
     pub fn contains(&self, ch: &char) -> bool {
@@ -328,6 +334,7 @@ impl Not for Or {
     }
 }
 
+#[derive(Clone)]
 pub struct Gt(char);
 impl Gt {
     pub fn contains(&self, ch: &char) -> bool {
@@ -346,6 +353,7 @@ impl Not for Gt {
     }
 }
 
+#[derive(Clone)]
 pub struct Gte(char);
 impl Gte {
     pub fn contains(&self, ch: &char) -> bool {
@@ -364,6 +372,7 @@ impl Not for Gte {
     }
 }
 
+#[derive(Clone)]
 pub struct Lt(char);
 impl Lt {
     pub fn contains(&self, ch: &char) -> bool {
@@ -382,6 +391,7 @@ impl Not for Lt {
     }
 }
 
+#[derive(Clone)]
 pub struct Lte(char);
 impl Lte {
     pub fn contains(&self, ch: &char) -> bool {
@@ -399,6 +409,8 @@ impl Not for Lte {
         Gt(self.0)
     }
 }
+
+#[derive(Clone)]
 pub struct Eq(char);
 impl Eq {
     pub fn contains(&self, ch: &char) -> bool {
@@ -417,6 +429,7 @@ impl Not for Eq {
     }
 }
 
+#[derive(Clone)]
 pub struct NotEq(char);
 impl NotEq {
     pub fn contains(&self, ch: &char) -> bool {
