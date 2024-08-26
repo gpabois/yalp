@@ -1,6 +1,6 @@
 use std::{borrow::Cow, ops::Deref};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Symbol<'a>(Cow<'a, str>);
 
 impl Symbol<'_> {
