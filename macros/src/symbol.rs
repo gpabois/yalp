@@ -4,7 +4,9 @@ use quote::quote;
 
 use crate::{Error, Lexer, Token};
 use yalp_core::{
-    lr::LrTable, traits::{Ast as _, Parser as _, Token as _}, ConstRuleReducer, LrParser, Rule, RuleReducer, RuleRhs, YalpError, YalpResult, EOS, START
+    lr::LrTable,
+    traits::{Ast as _, Parser as _, Token as _},
+    ConstRuleReducer, LrParser, Rule, RuleReducer, RuleRhs, YalpError, YalpResult, EOS, START,
 };
 
 #[derive(Debug, Default)]
@@ -65,7 +67,8 @@ impl TryFrom<Ast> for SymbolIdentSet {
             _ => Err(yalp_core::ErrorKind::unexpected_symbol(
                 "<symbol-ident-set>",
                 [value.symbol_id()],
-            ).into()),
+            )
+            .into()),
         }
     }
 }
@@ -79,7 +82,8 @@ impl TryFrom<Ast> for SymbolIdent {
             _ => Err(yalp_core::ErrorKind::unexpected_symbol(
                 "<symbol-ident>",
                 [value.symbol_id()],
-            ).into()),
+            )
+            .into()),
         }
     }
 }
@@ -90,10 +94,10 @@ impl TryFrom<Ast> for IdentChain {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::IdentChain(chain) => Ok(chain),
-            _ => Err(yalp_core::ErrorKind::unexpected_symbol(
-                "<ident-chain>",
-                [value.symbol_id()],
-            ).into()),
+            _ => Err(
+                yalp_core::ErrorKind::unexpected_symbol("<ident-chain>", [value.symbol_id()])
+                    .into(),
+            ),
         }
     }
 }
@@ -104,10 +108,10 @@ impl TryFrom<Ast> for Token {
     fn try_from(value: Ast) -> Result<Self, Self::Error> {
         match value {
             Ast::Token(tok) => Ok(tok),
-            _ => Err(yalp_core::ErrorKind::unexpected_symbol(
-                "<ident-chain>",
-                [value.symbol_id()],
-            ).into()),
+            _ => Err(
+                yalp_core::ErrorKind::unexpected_symbol("<ident-chain>", [value.symbol_id()])
+                    .into(),
+            ),
         }
     }
 }
@@ -205,14 +209,14 @@ fn r8(_: &Rule, mut lhs: RuleRhs<Ast>) -> Result<Ast, YalpError<Error>> {
 }
 
 const REDUCERS: &[ConstRuleReducer<Ast, Error>] = &[
-    RuleReducer::new(r1), 
-    RuleReducer::new(r2), 
-    RuleReducer::new(r3), 
-    RuleReducer::new(r4), 
-    RuleReducer::new(r5), 
-    RuleReducer::new(r6), 
-    RuleReducer::new(r7), 
-    RuleReducer::new(r8)
+    RuleReducer::new(r1),
+    RuleReducer::new(r2),
+    RuleReducer::new(r3),
+    RuleReducer::new(r4),
+    RuleReducer::new(r5),
+    RuleReducer::new(r6),
+    RuleReducer::new(r7),
+    RuleReducer::new(r8),
 ];
 
 /// Parse a collection of symbol idents : <symbol-ident>, <symbol-ident> ...

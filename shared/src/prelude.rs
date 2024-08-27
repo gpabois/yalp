@@ -1,5 +1,5 @@
-use crate::symbol::Symbol;
+use crate::symbol::SymbolName;
 
 pub trait IntoSymbol<'syntax> {
-    fn into_symbol(self) -> Symbol<'syntax>;
+    fn into_symbol(self) -> SymbolName<'syntax>;
 }

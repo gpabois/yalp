@@ -1,16 +1,15 @@
 use std::{borrow::Cow, ops::Deref};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Symbol<'a>(Cow<'a, str>);
+pub struct SymbolId<'a>(Cow<'a, str>);
 
-impl Symbol<'_> {
-    pub fn is_parsable(input: &syn::parse::ParseStream) -> bool {
-        use syn::Token;
-        input.peek(Token![<])
+impl AsRef<str> for SymbolId<'_> {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
-impl Deref for Symbol<'_> {
+impl Deref for SymbolId<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -18,24 +17,58 @@ impl Deref for Symbol<'_> {
     }
 }
 
-pub type StaticSymbol = Symbol<'static>;
+impl SymbolId<'_> {
+    pub fn is(&self, id: &str) -> bool {
+        self.deref() == id
+    }
+}
+pub type StaticSymbol = SymbolId<'static>;
 
-impl From<String> for Symbol<'_> {
+impl From<String> for SymbolId<'_> {
     fn from(value: String) -> Self {
         Self(Cow::Owned(value))
     }
 }
 
-impl<'a> From<&'a str> for Symbol<'a> {
+impl<'a> From<&'a str> for SymbolId<'a> {
     fn from(value: &'a str) -> Self {
         Self(Cow::Borrowed(value))
     }
 }
 
-pub enum SyntaxSymbol<'a> {
-    Terminal(Symbol<'a>),
-    NonTerminal(Symbol<'a>),
+pub enum Symbol<'a> {
+    Terminal(SymbolId<'a>),
+    NonTerminal { id: SymbolId<'a>, is_start: bool },
     EOS,
+}
+
+impl Symbol<'_> {
+    pub fn is_eos(&self) -> bool {
+        matches!(self, Self::EOS)
+    }
+
+    pub fn is_start(&self) -> bool {
+        matches!(self, Self::NonTerminal { id: _, is_start } if *is_start)
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Terminal(_))
+    }
+
+    pub fn is_non_terminal(&self) -> bool {
+        matches!(self, Self::NonTerminal { id: _, is_start: _ })
+    }
+
+    pub fn is(&self, symbol: &SymbolId<'_>) -> bool {
+        match self {
+            Self::Terminal(sym) => sym.is(symbol.as_ref()),
+            Self::NonTerminal {
+                id: sym,
+                is_start: _,
+            } => sym.is(symbol.as_ref()),
+            Self::EOS => false,
+        }
+    }
 }
 
 pub struct SymbolFragment(String);

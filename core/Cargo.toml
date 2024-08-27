@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+yalp-shared = { path = "../shared/" }
 itertools = "0.13.0"
 prettytable-rs = "0.10.0"
 ruast = "0.0.5"

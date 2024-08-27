@@ -1,142 +1,90 @@
 use itertools::Itertools;
+use yalp_shared::symbol::{Symbol, SymbolName};
 
+use std::borrow::{Borrow, Cow};
 use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
 
-use pb_bnf::prelude::*;
-pub use pb_bnf::symbol::{Symbol, SymbolRef};
-use pb_bnf::syntax::Syntax as BnfSyntax;
+use pb_bnf::syntax::BnfSyntax;
 
 pub type RuleId = usize;
-pub type StaticSymbol = SymbolRef<'static>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SyntaxRef<'a>(&'a [RuleRef<'a>]);
-
-impl<'a> SyntaxRef<'a> {
-    pub const fn new(rules: &'a [RuleRef<'a>]) -> Self {
-        Self(rules)
-    }
-
-    pub fn to_owned(&self) -> Syntax {
-        self.iter().map(|rule| rule.to_owned()).collect()
-    }
-}
-
-pub type StaticSyntax = SyntaxRef<'static>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RuleRef<'a> {
-    lhs: SymbolRef<'a>,
-    rhs: DefinitionRef<'a>,
-}
-
-pub type StaticRule = RuleRef<'static>;
-
-impl<'a> RuleRef<'a> {
-    pub const fn new(lhs: SymbolRef<'a>, rhs: &'a [SymbolRef<'a>]) -> Self {
-        Self {
-            lhs,
-            rhs: DefinitionRef::new(rhs),
-        }
-    }
-
-    pub fn to_owned(&self) -> Rule {
-        Rule {
-            lhs: self.lhs.to_owned(),
-            rhs: self.rhs.to_owned(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DefinitionRef<'a>(&'a [SymbolRef<'a>]);
-
-impl<'a> DefinitionRef<'a> {
-    pub const fn new(terms: &'a [SymbolRef<'a>]) -> Self {
-        Self(terms)
-    }
-
-    pub fn to_owned(&self) -> Definition {
-        self.iter().map(|sym| sym.to_owned()).collect()
-    }
-}
+pub type StaticSymbol = SymbolName<'static>;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Syntax(Vec<Rule>);
+pub struct Syntax<'syntax>(Cow<'syntax, [Rule<'syntax>]>);
 
-impl Syntax {
+impl<'syntax> Syntax<'syntax> {
     /// Iterate the rules behind a specific non-terminal symbols.
-    pub fn iter_rules_by_symbol<'a>(&'a self, sym: &'a Symbol) -> impl Iterator<Item = &'a Rule> {
-        self.iter().filter(move |rule| &rule.lhs == sym)
+    pub fn iter_rules_by_symbol<'a>(
+        &'a self,
+        sym: &'a str,
+    ) -> impl Iterator<Item = &'a Rule<'syntax>> {
+        self.as_ref().iter().filter(move |rule| rule.lhs.is(sym))
     }
 
     /// Iterate over all symbols used in the syntax.
-    pub fn iter_symbols(&self) -> impl Iterator<Item = &Symbol> {
-        self.iter()
-            .flat_map(|rule| std::iter::once(&rule.lhs).chain(rule.rhs.iter()))
+    pub fn iter_symbols(&self) -> impl Iterator<Item = &SymbolName<'syntax>> {
+        self.as_ref()
+            .iter()
+            .flat_map(|rule| std::iter::once(&rule.lhs).chain(rule.rhs.as_ref().iter()))
             .dedup()
     }
 }
 
-impl FromIterator<Rule> for Syntax {
-    fn from_iter<T: IntoIterator<Item = Rule>>(iter: T) -> Self {
+impl<'syntax> FromIterator<Rule<'syntax>> for Syntax<'syntax> {
+    fn from_iter<T: IntoIterator<Item = Rule<'syntax>>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
     }
 }
 
-impl Deref for Syntax {
-    type Target = Vec<Rule>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl<'syntax> AsRef<[Rule<'syntax>]> for Syntax<'syntax> {
+    fn as_ref(&self) -> &[Rule<'syntax>] {
+        self.0.borrow()
     }
 }
 
-impl DerefMut for Syntax {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl<'syntax> AsMut<Vec<Rule<'syntax>>> for Syntax<'syntax> {
+    fn as_mut(&mut self) -> &mut Vec<Rule<'syntax>> {
+        self.0.to_mut()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Rule {
-    pub lhs: Symbol,
-    pub rhs: Definition,
+pub struct Rule<'syntax> {
+    pub lhs: SymbolName<'syntax>,
+    pub rhs: Definition<'syntax>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Definition(Vec<Symbol>);
+pub struct Definition<'syntax>(Cow<'syntax, [SymbolName<'syntax>]>);
 
-impl FromIterator<Symbol> for Definition {
-    fn from_iter<T: IntoIterator<Item = Symbol>>(iter: T) -> Self {
+impl<'syntax> AsRef<[SymbolName<'syntax>]> for Definition<'syntax> {
+    fn as_ref(&self) -> &[SymbolName<'syntax>] {
+        self.0.borrow()
+    }
+}
+
+impl<'syntax> AsMut<Vec<SymbolName<'syntax>>> for Definition<'syntax> {
+    fn as_mut(&mut self) -> &mut Vec<SymbolName<'syntax>> {
+        self.0.to_mut()
+    }
+}
+
+impl<'syntax> FromIterator<SymbolName<'syntax>> for Definition<'syntax> {
+    fn from_iter<T: IntoIterator<Item = SymbolName<'syntax>>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
     }
 }
 
-impl Deref for Definition {
-    type Target = Vec<Symbol>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Definition {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl From<BnfSyntax> for Syntax {
-    fn from(value: BnfSyntax) -> Self {
+impl<'syntax> From<BnfSyntax<'syntax>> for Syntax<'syntax> {
+    fn from(value: BnfSyntax<'syntax>) -> Self {
         let mut syntax = Self::default();
 
         value.iter().cloned().enumerate().for_each(|(i, rule)| {
             // if root = A0...An, then root = B and B = A0...An
             if i == 0 && rule.rhs().len() > 1 {
                 syntax.push(Rule {
-                    lhs: Symbol::from("root"),
+                    lhs: SymbolName::from("root"),
                     rhs: Definition::from_iter([rule.lhs().clone()]),
                 });
             }
@@ -164,7 +112,7 @@ impl<'syntax> PrepSyntax<'syntax> {
         self.symbols.start.map(PrepSymbol::NonTerminal)
     }
 
-    pub fn into_term(&self, symbol: &'syntax Symbol) -> PrepSymbol<'syntax> {
+    pub fn into_term(&self, symbol: &'syntax SymbolName) -> PrepSymbol<'syntax> {
         if self.symbols.terminals.contains(symbol) {
             PrepSymbol::Terminal(symbol)
         } else {
@@ -177,8 +125,8 @@ impl<'syntax> PrepSyntax<'syntax> {
     }
 }
 
-impl<'a> From<&'a Syntax> for PrepSyntax<'a> {
-    fn from(syntax: &'a Syntax) -> Self {
+impl<'syntax> From<&Syntax<'syntax>> for PrepSyntax<'syntax> {
+    fn from(syntax: &Syntax<'syntax>) -> Self {
         let symbols = SymbolSet::from(syntax);
         let rules = syntax.iter().enumerate().map(|(id, rule)| {
             let lhs = PrepSymbol::NonTerminal(&rule.lhs);
@@ -236,8 +184,8 @@ impl<'a> FromIterator<PrepSymbol<'a>> for PrepDefinition<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Preprocess rule definition term for parsing generation
 pub enum PrepSymbol<'a> {
-    Terminal(&'a Symbol),
-    NonTerminal(&'a Symbol),
+    Terminal(&'a SymbolName),
+    NonTerminal(&'a SymbolName),
     EOS,
 }
 
@@ -254,7 +202,7 @@ impl PrepSymbol<'_> {
         matches!(self, Self::NonTerminal(_))
     }
 
-    pub fn is(&self, symbol: &Symbol) -> bool {
+    pub fn is(&self, symbol: &SymbolName) -> bool {
         match self {
             PrepSymbol::Terminal(sym) => *sym == symbol,
             PrepSymbol::NonTerminal(sym) => *sym == symbol,
@@ -265,9 +213,9 @@ impl PrepSymbol<'_> {
 
 #[derive(Default, Clone)]
 pub struct SymbolSet<'syntax> {
-    pub terminals: HashSet<&'syntax Symbol>,
-    pub non_terminals: HashSet<&'syntax Symbol>,
-    pub start: Option<&'syntax Symbol>,
+    pub terminals: HashSet<SymbolName<'syntax>>,
+    pub non_terminals: HashSet<SymbolName<'syntax>>,
+    pub start: Option<SymbolName<'syntax>>,
 }
 
 impl<'syntax> SymbolSet<'syntax> {
@@ -275,13 +223,8 @@ impl<'syntax> SymbolSet<'syntax> {
         self.terminals
             .iter()
             .copied()
-            .map(PrepSymbol::Terminal)
-            .chain(
-                self.non_terminals
-                    .iter()
-                    .copied()
-                    .map(PrepSymbol::NonTerminal),
-            )
+            .map(Symbol::Terminal)
+            .chain(self.non_terminals.iter().copied().map(Symbol::NonTerminal))
     }
 }
 
