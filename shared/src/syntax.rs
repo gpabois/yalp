@@ -12,7 +12,10 @@ pub struct FinalizeSyntax<'syntax> {
     pub set: SymbolSet<'syntax>,
 }
 
-pub type SyntaxKernel<'syntax> = Syntax<'syntax, Definition<'syntax, SymbolId<'syntax>>>;
+pub type SyntaxKernel<'syntax> = Syntax<'syntax, DefinitionKernel<'syntax>>;
+pub type RuleKernel<'syntax> = Rule<'syntax, DefinitionKernel<'syntax>>;
+pub type DefinitionKernel<'syntax> = Definition<'syntax, SymbolId<'syntax>>;
+
 pub type FinalizedSyntax<'syntax> = Syntax<'syntax, FinalizedDefinition<'syntax>>;
 pub type FinalizedRule<'syntax> = Rule<'syntax, FinalizedDefinition<'syntax>>;
 pub type FinalizedDefinition<'syntax> = Definition<'syntax, Symbol<'syntax>>;
