@@ -7,6 +7,8 @@ use crate::{
     symbol::{Symbol, SymbolId, SymbolSet},
 };
 
+pub struct KernelizeSyntax;
+
 /// Finalize the syntax to generate parsers.
 pub struct FinalizeSyntax<'syntax> {
     pub set: SymbolSet<'syntax>,
