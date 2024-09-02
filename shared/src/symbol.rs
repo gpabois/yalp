@@ -1,6 +1,47 @@
-use std::{borrow::Cow, ops::Deref};
+use std::{
+    borrow::Cow,
+    ops::{Deref, Index},
+};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::{prelude::IterSymbolIdentifiers, syntax::Syntax};
+
+pub struct SymbolSet<'syntax>(Vec<Symbol<'syntax>>);
+
+impl<'syntax, Def> From<&Syntax<'syntax, Def>> for SymbolSet<'syntax>
+where
+    Def: Clone + IterSymbolIdentifiers<'syntax>,
+{
+    fn from(syntax: &Syntax<'syntax, Def>) -> Self {
+        Self(
+            syntax
+                .iter_symbol_identifiers()
+                .map(|id| {
+                    if syntax.is_terminal(&id) {
+                        Symbol::Terminal(Terminal(id))
+                    } else {
+                        Symbol::NonTerminal(NonTerminal {
+                            id,
+                            is_start: false,
+                        })
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+impl<'syntax, SymId> Index<SymId> for SymbolSet<'syntax>
+where
+    SymId: AsRef<str>,
+{
+    type Output = Symbol<'syntax>;
+
+    fn index(&self, index: SymId) -> &Self::Output {
+        self.0.iter().find(move |sym| sym.is(&index)).unwrap()
+    }
+}
+
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub struct SymbolId<'a>(Cow<'a, str>);
 
 impl AsRef<str> for SymbolId<'_> {
@@ -18,11 +59,11 @@ impl Deref for SymbolId<'_> {
 }
 
 impl SymbolId<'_> {
-    pub fn is(&self, id: &str) -> bool {
-        self.deref() == id
+    pub fn is<SymId: AsRef<str>>(&self, id: SymId) -> bool {
+        self.deref() == id.as_ref()
     }
 }
-pub type StaticSymbol = SymbolId<'static>;
+pub type StaticSymbolId = SymbolId<'static>;
 
 impl From<String> for SymbolId<'_> {
     fn from(value: String) -> Self {
@@ -36,9 +77,32 @@ impl<'a> From<&'a str> for SymbolId<'a> {
     }
 }
 
-pub enum Symbol<'a> {
-    Terminal(SymbolId<'a>),
-    NonTerminal { id: SymbolId<'a>, is_start: bool },
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Terminal<'syntax>(SymbolId<'syntax>);
+
+impl<'syntax> AsRef<SymbolId<'syntax>> for Terminal<'syntax> {
+    fn as_ref(&self) -> &SymbolId<'syntax> {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct NonTerminal<'syntax> {
+    id: SymbolId<'syntax>,
+    is_start: bool,
+}
+
+impl<'syntax> AsRef<SymbolId<'syntax>> for NonTerminal<'syntax> {
+    fn as_ref(&self) -> &SymbolId<'syntax> {
+        &self.id
+    }
+}
+
+/// Symbol definition
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Symbol<'syntax> {
+    Terminal(Terminal<'syntax>),
+    NonTerminal(NonTerminal<'syntax>),
     EOS,
 }
 
@@ -48,24 +112,21 @@ impl Symbol<'_> {
     }
 
     pub fn is_start(&self) -> bool {
-        matches!(self, Self::NonTerminal { id: _, is_start } if *is_start)
+        matches!(self, Self::NonTerminal(sym) if sym.is_start)
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Terminal(_))
+        matches!(self, Self::Terminal(_)) || matches!(self, Self::EOS)
     }
 
     pub fn is_non_terminal(&self) -> bool {
-        matches!(self, Self::NonTerminal { id: _, is_start: _ })
+        matches!(self, Self::NonTerminal(_))
     }
 
-    pub fn is(&self, symbol: &SymbolId<'_>) -> bool {
+    pub fn is<SymId: AsRef<str>>(&self, id: SymId) -> bool {
         match self {
-            Self::Terminal(sym) => sym.is(symbol.as_ref()),
-            Self::NonTerminal {
-                id: sym,
-                is_start: _,
-            } => sym.is(symbol.as_ref()),
+            Self::Terminal(sym) => sym.as_ref().is(id),
+            Self::NonTerminal(sym) => sym.as_ref().is(id),
             Self::EOS => false,
         }
     }
